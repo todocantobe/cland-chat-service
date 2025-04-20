@@ -1,0 +1,11 @@
+server:
+  mode: debug
+  port: 8080
+ws:
+  port: 8081
+log:
+  level: info
+  filename: app.log
+  max_size: 100
+  max_backups: 5
+  max_age: 30
