@@ -8,8 +8,9 @@ import (
 // MessageRepository 消息仓储接口
 type MessageRepository interface {
 	Create(ctx context.Context, message *entity.Message) error
+	GetByID(ctx context.Context, msgID string) (*entity.Message, error)
 	GetBySessionID(ctx context.Context, sessionID string) ([]*entity.Message, error)
-	UpdateStatus(ctx context.Context, messageID uint, status string) error
+	UpdateStatus(ctx context.Context, msgID string, status uint8) error
 }
 
 // SessionRepository 会话仓储接口

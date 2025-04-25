@@ -1,7 +1,7 @@
 package main
 
 import (
-	"cland.org/cland-chat-service/core/infrastructure/delivery/http/response"
+	"cland.org/cland-chat-service/core/usecase"
 	"context"
 	"fmt"
 	"net/http"
@@ -11,53 +11,59 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"go.uber.org/zap"
-	"log"
 
 	"cland.org/cland-chat-service/common/constants"
 	"cland.org/cland-chat-service/core/infrastructure/config"
 	cland_http "cland.org/cland-chat-service/core/infrastructure/delivery/http"
 	cland_ws "cland.org/cland-chat-service/core/infrastructure/delivery/websocket"
-	"cland.org/cland-chat-service/core/infrastructure/delivery/websocket/connection"
 	"cland.org/cland-chat-service/core/infrastructure/logger"
+	"cland.org/cland-chat-service/core/infrastructure/repository"
 )
 
 func main() {
 	// Load configuration
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatalf("Failed to load config: %v", err)
+		zap.L().Fatal("Failed to load config", zap.Error(err))
 	}
 
 	// Initialize logger
 	logger.InitConfig(cfg.Log)
 	zapLogger := logger.GetLogger()
 
+	// Validate configuration
+	if cfg.Server.Port == 0 {
+		zapLogger.Fatal("Invalid server port configuration")
+	}
+	if cfg.WS.Port == 0 {
+		zapLogger.Fatal("Invalid WebSocket port configuration")
+	}
+	if cfg.Server.Port == cfg.WS.Port {
+		zapLogger.Fatal("HTTP and WebSocket ports cannot be the same")
+	}
+
+	// Initialize repositories
+	msgRepo := repository.NewMemoryMessageRepository()
+	sessionRepo := repository.NewMemorySessionRepository()
+	userRepo := repository.NewMemoryUserRepository()
+
+	// Initialize use cases
+	chatUseCase := usecase.NewChatUseCase(
+		msgRepo,     // messageRepo
+		sessionRepo, // sessionRepo
+		userRepo,    // userRepo
+	)
+
 	// Create Gin router
-	httpRouter := cland_http.GetRouter()
+	httpRouter := cland_http.GetRouter(chatUseCase)
 	httpRouter.Use(logger.GinRecovery(zapLogger, true))
 	httpRouter.Use(logger.GinLogger(zapLogger))
 
-	// Initialize WebSocket manager
-	wsManager := connection.NewManager(zapLogger)
-
-	// Register routes
-	roote_api := httpRouter.Group("/")
-	{
-		roote_api.GET("/health", func(c *gin.Context) {
-			c.JSON(http.StatusOK, response.Success(nil))
-		})
-	}
-
-	api := httpRouter.Group("/api")
-	{
-		api.GET("/health", func(c *gin.Context) {
-			c.JSON(http.StatusOK, gin.H{"status": "ok"})
-		})
-	}
-
+	// Initialize WebSocket handler
+	wsHandler := cland_ws.NewHandler(chatUseCase)
+	
 	// Create WebSocket server
 	wsServer := &http.Server{
 		Addr: fmt.Sprintf(":%d", cfg.WS.Port),
@@ -67,7 +73,17 @@ func main() {
 				ReadBufferSize:  1024,
 				WriteBufferSize: 1024,
 				CheckOrigin: func(r *http.Request) bool {
-					return true // TODO: 生产环境限制来源
+					origin := r.Header.Get("Origin")
+					if cfg.Server.Mode == "production" {
+						allowedOrigins := []string{"https://example.com"} // TODO: 从配置读取
+						for _, allowed := range allowedOrigins {
+							if origin == allowed {
+								return true
+							}
+						}
+						return false
+					}
+					return true // 开发环境允许所有来源
 				},
 			}
 
@@ -91,8 +107,8 @@ func main() {
 				return
 			}
 
-			// 处理 WebSocket 连接
-			wsManager.HandleConnection(conn, userID)
+			// 处理WebSocket连接
+			wsHandler.HandleConnection(conn, userID)
 		}),
 	}
 
@@ -124,21 +140,39 @@ func main() {
 
 	// Graceful shutdown
 	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	<-sigChan
-	zapLogger.Info("Shutting down servers...")
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 
-	// Shutdown servers
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	// Create main context for the application
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	if err := httpServer.Shutdown(ctx); err != nil {
-		zapLogger.Error("Failed to shutdown HTTP server", zap.Error(err))
+	select {
+	case sig := <-sigChan:
+		zapLogger.Info("Received shutdown signal", zap.String("signal", sig.String()))
+	case <-ctx.Done():
+		zapLogger.Info("Context cancelled, shutting down")
 	}
-	if err := wsServer.Shutdown(ctx); err != nil {
-		zapLogger.Error("Failed to shutdown WebSocket server", zap.Error(err))
+
+	zapLogger.Info("Shutting down servers gracefully...")
+
+	// First try graceful shutdown
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer shutdownCancel()
+
+	var shutdownErr error
+	if err := httpServer.Shutdown(shutdownCtx); err != nil {
+		zapLogger.Error("Failed to shutdown HTTP server gracefully", zap.Error(err))
+		shutdownErr = err
+	}
+	if err := wsServer.Shutdown(shutdownCtx); err != nil {
+		zapLogger.Error("Failed to shutdown WebSocket server gracefully", zap.Error(err))
+		shutdownErr = err
 	}
 
 	wg.Wait()
-	zapLogger.Info("Servers stopped")
+
+	if shutdownErr != nil {
+		zapLogger.Fatal("Failed to shutdown servers gracefully")
+	}
+	zapLogger.Info("Servers stopped gracefully")
 }
