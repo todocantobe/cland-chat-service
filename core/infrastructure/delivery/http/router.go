@@ -31,6 +31,19 @@ func GetRouter(chatUseCase *usecase.ChatUseCase) *gin.Engine {
 }
 
 func setupRoutes(r *gin.Engine, chatUseCase *usecase.ChatUseCase) {
+	// Handle OPTIONS requests for CORS
+	r.Use(func(c *gin.Context) {
+		if c.Request.Method == "OPTIONS" {
+			c.Header("Access-Control-Allow-Origin", "*")
+			c.Header("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS")
+			c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			c.Header("Access-Control-Max-Age", "86400")
+			c.AbortWithStatus(http.StatusOK)
+			return
+		}
+		c.Next()
+	})
+
 	// WebSocket路由
 	/**
 	r.GET("/ws", func(c *gin.Context) {
