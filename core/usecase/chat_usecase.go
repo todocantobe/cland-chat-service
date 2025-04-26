@@ -12,7 +12,7 @@ import (
 // ChatUseCase 聊天用例
 type ChatUseCase struct {
 	messageRepo repository.MessageRepository
-	sessionRepo repository.SessionRepository
+	SessionRepo repository.SessionRepository
 	UserRepo    repository.UserRepository
 }
 
@@ -24,7 +24,7 @@ func NewChatUseCase(
 ) *ChatUseCase {
 	return &ChatUseCase{
 		messageRepo: messageRepo,
-		sessionRepo: sessionRepo,
+		SessionRepo: sessionRepo,
 		UserRepo:    userRepo,
 	}
 }
@@ -52,7 +52,7 @@ func (uc *ChatUseCase) SendMessage(ctx context.Context, message *entity.Message)
 // handleChatMessage 处理普通聊天消息
 func (uc *ChatUseCase) handleChatMessage(ctx context.Context, message *entity.Message) error {
 	// 检查会话是否存在
-	_, err := uc.sessionRepo.GetByID(ctx, message.SessionID)
+	_, err := uc.SessionRepo.GetByID(ctx, message.SessionID)
 	if err != nil {
 		return err
 	}
@@ -79,7 +79,7 @@ func (uc *ChatUseCase) handleNotification(ctx context.Context, message *entity.M
 	}
 
 	// 其他通知需要会话检查
-	_, err := uc.sessionRepo.GetByID(ctx, message.SessionID)
+	_, err := uc.SessionRepo.GetByID(ctx, message.SessionID)
 	if err != nil {
 		return err
 	}
@@ -149,7 +149,7 @@ func (uc *ChatUseCase) CreateSession(ctx context.Context, userID string) (*entit
 		Status:  "active",
 	}
 
-	if err := uc.sessionRepo.Create(ctx, session); err != nil {
+	if err := uc.SessionRepo.Create(ctx, session); err != nil {
 		return nil, err
 	}
 
@@ -158,7 +158,7 @@ func (uc *ChatUseCase) CreateSession(ctx context.Context, userID string) (*entit
 
 // CloseSession 关闭会话
 func (uc *ChatUseCase) CloseSession(ctx context.Context, sessionID string) error {
-	return uc.sessionRepo.UpdateStatus(ctx, sessionID, "closed")
+	return uc.SessionRepo.UpdateStatus(ctx, sessionID, "closed")
 }
 
 // ProcessMessageStatus 处理消息状态更新

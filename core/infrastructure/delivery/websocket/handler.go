@@ -28,12 +28,13 @@ func NewHandler(chatUseCase *usecase.ChatUseCase) *Handler {
 	}
 }
 
-// HandleConnection 处理WebSocket连接
-func (h *Handler) HandleConnection(conn *websocket.Conn, userID string) {
-	// 存储连接
-	h.connections.Store(userID, conn)
+// HandleConnection handles WebSocket connection with authentication
+func (h *Handler) HandleConnection(conn *websocket.Conn, cid string) {
+
+	// Store connection
+	h.connections.Store(cid, conn)
 	defer func() {
-		h.connections.Delete(userID)
+		h.connections.Delete(cid)
 		conn.Close()
 	}()
 

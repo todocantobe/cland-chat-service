@@ -5,7 +5,6 @@ import (
 	"sync"
 
 	"cland.org/cland-chat-service/core/infrastructure/delivery/http/handler"
-	ws "cland.org/cland-chat-service/core/infrastructure/delivery/websocket"
 	"cland.org/cland-chat-service/core/usecase"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -33,25 +32,20 @@ func GetRouter(chatUseCase *usecase.ChatUseCase) *gin.Engine {
 
 func setupRoutes(r *gin.Engine, chatUseCase *usecase.ChatUseCase) {
 	// WebSocket路由
+	/**
 	r.GET("/ws", func(c *gin.Context) {
-		// 认证逻辑
-		userID := c.Query("userId")
-		if userID == "" {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
-			return
-		}
-
-		// 升级为WebSocket连接
+		// Upgrade to WebSocket connection
 		conn, err := wsUpgrader.Upgrade(c.Writer, c.Request, nil)
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "failed to upgrade connection"})
 			return
 		}
 
-		// 处理连接
+		// Handle connection
 		wsHandler := ws.NewHandler(chatUseCase)
-		go wsHandler.HandleConnection(conn, userID)
+		go wsHandler.HandleConnection(conn)
 	})
+	*/
 
 	// API路由分组
 	api := r.Group("/api")
@@ -60,8 +54,11 @@ func setupRoutes(r *gin.Engine, chatUseCase *usecase.ChatUseCase) {
 			c.JSON(http.StatusOK, gin.H{"status": "ok"})
 		})
 
-		// 用户初始化
-		userHandler := handler.NewUserHandler(chatUseCase.UserRepo)
+		// User initialization
+		userHandler := handler.NewUserHandler(
+			chatUseCase.UserRepo,
+			chatUseCase.SessionRepo,
+		)
 		api.POST("/init", userHandler.InitUser)
 
 		// 离线消息

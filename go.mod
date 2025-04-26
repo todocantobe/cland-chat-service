@@ -7,6 +7,8 @@ toolchain go1.24.2
 require (
 	github.com/alecthomas/template v0.0.0-20190718012654-fb15b899a751
 	github.com/gin-gonic/gin v1.9.1
+	github.com/golang-jwt/jwt/v5 v5.2.2
+	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.1
 	github.com/swaggo/swag v1.16.4
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
