@@ -9,72 +9,86 @@ import (
 
 	"cland.org/cland-chat-service/core/domain/entity"
 	"cland.org/cland-chat-service/core/usecase"
-	"github.com/gorilla/websocket"
+	socketio "github.com/googollee/go-socket.io"
 )
 
 type Handler struct {
-	upgrader    websocket.Upgrader
+	server      *socketio.Server
 	chatUseCase *usecase.ChatUseCase
-	connections sync.Map // map[string]*websocket.Conn
+	connections sync.Map // map[string]socketio.Conn
 }
 
 func NewHandler(chatUseCase *usecase.ChatUseCase) *Handler {
-	return &Handler{
-		upgrader: websocket.Upgrader{
-			ReadBufferSize:  1024,
-			WriteBufferSize: 1024,
-		},
+	server := socketio.NewServer(nil)
+	h := &Handler{
+		server:      server,
 		chatUseCase: chatUseCase,
 	}
+
+	// Setup socket.io event handlers
+	server.OnConnect("/", func(conn socketio.Conn) error {
+		log.Println("connected:", conn.ID())
+		return nil
+	})
+
+	server.OnEvent("/", "auth", h.handleAuth)
+	server.OnEvent("/", "message", h.handleMessage)
+	server.OnError("/", h.handleError)
+	server.OnDisconnect("/", h.handleDisconnect)
+
+	return h
 }
 
-// HandleConnection handles WebSocket connection with authentication
-func (h *Handler) HandleConnection(conn *websocket.Conn, cid string) {
-	// Store connection using user ID (extract from cid if needed)
-	userID := cid
-	if len(cid) > 2 && cid[1] == ':' {
-		userID = cid[2:] // Extract U:c00001 -> c00001
-	}
+func (h *Handler) GetServer() *socketio.Server {
+	return h.server
+}
 
+func (h *Handler) handleAuth(conn socketio.Conn, token string) {
+	// TODO: Implement authentication
+	userID := token // For now just use token as userID
 	h.connections.Store(userID, conn)
-	defer func() {
-		h.connections.Delete(userID)
-		conn.Close()
-	}()
+	conn.Join(userID)
+}
 
-	for {
-		// 读取消息
-		_, rawMsg, err := conn.ReadMessage()
-		if err != nil {
-			log.Printf("read error: %v", err)
-			break
-		}
+func (h *Handler) handleMessage(conn socketio.Conn, data string) {
+	// Parse message
+	var msg entity.Message
+	if err := json.Unmarshal([]byte(data), &msg); err != nil {
+		h.sendError(conn, "invalid message format")
+		return
+	}
 
-		// 解析消息
-		var msg entity.Message
-		if err := json.Unmarshal(rawMsg, &msg); err != nil {
-			h.sendError(conn, "invalid message format")
-			continue
-		}
-
-		// 处理消息
-		if err := h.processMessage(conn, msg); err != nil {
-			h.sendError(conn, err.Error())
-		}
+	// Process message
+	if err := h.processMessage(conn, msg); err != nil {
+		h.sendError(conn, err.Error())
 	}
 }
 
-// processMessage 处理消息业务逻辑
-func (h *Handler) processMessage(conn *websocket.Conn, msg entity.Message) error {
+func (h *Handler) handleError(conn socketio.Conn, err error) {
+	log.Println("socket error:", err)
+}
+
+func (h *Handler) handleDisconnect(conn socketio.Conn, reason string) {
+	log.Println("disconnected:", conn.ID(), reason)
+	// Remove connection from map
+	h.connections.Range(func(key, value interface{}) bool {
+		if value.(socketio.Conn) == conn {
+			h.connections.Delete(key)
+			return false
+		}
+		return true
+	})
+}
+
+// processMessage 处理消息业务逻辑 (保持不变)
+func (h *Handler) processMessage(conn socketio.Conn, msg entity.Message) error {
 	ctx := context.Background()
 
-	// 处理消息
 	switch msg.MsgType {
 	case entity.MsgTypeMessage, entity.MsgTypeNotification:
 		if err := h.chatUseCase.SendMessage(ctx, &msg); err != nil {
 			return err
 		}
-		// 推送消息给接收方
 		return h.pushMessage(msg)
 	case entity.MsgTypeAck:
 		return h.chatUseCase.ProcessMessageStatus(ctx, msg.MsgID, entity.StatusRead)
@@ -83,53 +97,40 @@ func (h *Handler) processMessage(conn *websocket.Conn, msg entity.Message) error
 	}
 }
 
-// pushMessage 推送消息给接收方
+// pushMessage 推送消息给接收方 (修改为使用socket.io)
 func (h *Handler) pushMessage(msg entity.Message) error {
-	// 获取接收方ID (处理U:前缀)
 	recipientID := msg.Dst
 	if len(msg.Dst) > 2 && msg.Dst[1] == ':' {
-		recipientID = msg.Dst[2:] // Extract U:c00002 -> c00002
+		recipientID = msg.Dst[2:]
 	}
 
-	// 获取接收方连接
-	conn, ok := h.connections.Load(recipientID)
-	if !ok {
-		// 接收方离线，更新为离线状态
-		return h.chatUseCase.ProcessMessageStatus(context.Background(), msg.MsgID, entity.StatusOffline)
-	}
-
-	// 发送消息
-	wsConn := conn.(*websocket.Conn)
 	msg.Status = entity.StatusDelivered
 	wsMsg := FromEntity(msg).ToWSMessage()
 
-	msgBytes, err := json.Marshal(wsMsg)
-	if err != nil {
-		return err
+	if conn, ok := h.connections.Load(recipientID); ok {
+		conn.(socketio.Conn).Emit("message", wsMsg)
 	}
 
-	return wsConn.WriteMessage(websocket.TextMessage, msgBytes)
+	// 接收方离线，更新为离线状态
+	return h.chatUseCase.ProcessMessageStatus(context.Background(), msg.MsgID, entity.StatusOffline)
 }
 
 // sendError 发送错误消息
-func (h *Handler) sendError(conn *websocket.Conn, errMsg string) {
+func (h *Handler) sendError(conn socketio.Conn, errMsg string) {
 	errResp := WSMessage{
 		Code: 400,
 		Msg:  errMsg,
 		Data: nil,
 	}
-	conn.WriteJSON(errResp)
+	conn.Emit("error", errResp)
 }
 
 // BroadcastMessage 广播消息给多个用户
 func (h *Handler) BroadcastMessage(msg entity.Message, userIDs []string) error {
+	wsMsg := FromEntity(msg).ToWSMessage()
 	for _, userID := range userIDs {
 		if conn, ok := h.connections.Load(userID); ok {
-			wsConn := conn.(*websocket.Conn)
-			wsMsg := FromEntity(msg).ToWSMessage()
-			if err := wsConn.WriteJSON(wsMsg); err != nil {
-				return err
-			}
+			conn.(socketio.Conn).Emit("message", wsMsg)
 		}
 	}
 	return nil

@@ -14,12 +14,6 @@ type Config struct {
 	Log    LogConfig    `mapstructure:"log"`
 	Redis  RedisConfig  `mapstructure:"redis"`
 	DB     DBConfig     `mapstructure:"db"`
-	WS     WSConfig     `mapstructure:"ws"` // 新增
-}
-
-// WSConfig WebSocket 配置
-type WSConfig struct {
-	Port int `mapstructure:"port"` // WebSocket 端口
 }
 
 // ServerConfig 服务器配置

@@ -6,3 +6,4 @@ runtime/*
 !runtime/fonts
 /app.log
 /vendor/
+/vendor/*

@@ -4,36 +4,15 @@ import (
 	"net/http"
 	"sync"
 
-	"cland.org/cland-chat-service/core/infrastructure/config"
 	"cland.org/cland-chat-service/core/infrastructure/delivery/http/handler"
+	"cland.org/cland-chat-service/core/infrastructure/delivery/websocket"
 	"cland.org/cland-chat-service/core/usecase"
 	"github.com/gin-gonic/gin"
-	"github.com/gorilla/websocket"
 )
 
 var (
-	once       sync.Once
-	router     *gin.Engine
-	wsUpgrader = websocket.Upgrader{
-		ReadBufferSize:  1024,
-		WriteBufferSize: 1024,
-		CheckOrigin: func(r *http.Request) bool {
-			cfg, err := config.Load()
-			if err != nil {
-				return false
-			}
-			if cfg.Server.Mode == "debug" {
-				return true
-			}
-			origin := r.Header.Get("Origin")
-			for _, allowed := range cfg.Server.AllowedOrigins {
-				if allowed == "*" || allowed == origin {
-					return true
-				}
-			}
-			return false
-		},
-	}
+	once   sync.Once
+	router *gin.Engine
 )
 
 func GetRouter(chatUseCase *usecase.ChatUseCase) *gin.Engine {
@@ -61,21 +40,10 @@ func setupRoutes(r *gin.Engine, chatUseCase *usecase.ChatUseCase) {
 		c.Next()
 	})
 
-	// WebSocket路由
-	/**
-	r.GET("/ws", func(c *gin.Context) {
-		// Upgrade to WebSocket connection
-		conn, err := wsUpgrader.Upgrade(c.Writer, c.Request, nil)
-		if err != nil {
-			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "failed to upgrade connection"})
-			return
-		}
-
-		// Handle connection
-		wsHandler := ws.NewHandler(chatUseCase)
-		go wsHandler.HandleConnection(conn)
-	})
-	*/
+	// Socket.IO路由
+	socketHandler := websocket.NewHandler(chatUseCase)
+	r.GET("/socket.io/*any", gin.WrapH(socketHandler.GetServer()))
+	r.POST("/socket.io/*any", gin.WrapH(socketHandler.GetServer()))
 
 	// API路由分组
 	api := r.Group("/api")
