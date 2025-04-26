@@ -1,6 +1,8 @@
 server:
   mode: debug
   port: 8080
+  allowed_origins:
+    - "*" # 在debug模式下允许所有来源
 ws:
   port: 8081
 log:

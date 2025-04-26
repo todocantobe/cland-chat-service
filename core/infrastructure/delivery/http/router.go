@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"sync"
 
+	"cland.org/cland-chat-service/core/infrastructure/config"
 	"cland.org/cland-chat-service/core/infrastructure/delivery/http/handler"
 	"cland.org/cland-chat-service/core/usecase"
 	"github.com/gin-gonic/gin"
@@ -17,7 +18,20 @@ var (
 		ReadBufferSize:  1024,
 		WriteBufferSize: 1024,
 		CheckOrigin: func(r *http.Request) bool {
-			return true // TODO: 生产环境应限制来源
+			cfg, err := config.Load()
+			if err != nil {
+				return false
+			}
+			if cfg.Server.Mode == "debug" {
+				return true
+			}
+			origin := r.Header.Get("Origin")
+			for _, allowed := range cfg.Server.AllowedOrigins {
+				if allowed == "*" || allowed == origin {
+					return true
+				}
+			}
+			return false
 		},
 	}
 )
@@ -31,13 +45,16 @@ func GetRouter(chatUseCase *usecase.ChatUseCase) *gin.Engine {
 }
 
 func setupRoutes(r *gin.Engine, chatUseCase *usecase.ChatUseCase) {
-	// Handle OPTIONS requests for CORS
+	// CORS middleware
 	r.Use(func(c *gin.Context) {
+		// Set CORS headers for all responses
+		c.Header("Access-Control-Allow-Origin", "*")
+		c.Header("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS")
+		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		c.Header("Access-Control-Max-Age", "86400")
+
+		// Handle OPTIONS requests
 		if c.Request.Method == "OPTIONS" {
-			c.Header("Access-Control-Allow-Origin", "*")
-			c.Header("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS")
-			c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization")
-			c.Header("Access-Control-Max-Age", "86400")
 			c.AbortWithStatus(http.StatusOK)
 			return
 		}

@@ -2,9 +2,10 @@ package config
 
 import (
 	"fmt"
-	"github.com/spf13/viper"
 	"os"
 	"strconv"
+
+	"github.com/spf13/viper"
 )
 
 // Config 应用配置
@@ -23,9 +24,10 @@ type WSConfig struct {
 
 // ServerConfig 服务器配置
 type ServerConfig struct {
-	Mode string `mapstructure:"mode"`
-	Host string `mapstructure:"host"` // 新增
-	Port int    `mapstructure:"port"`
+	Mode           string   `mapstructure:"mode"`
+	Host           string   `mapstructure:"host"`
+	Port           int      `mapstructure:"port"`
+	AllowedOrigins []string `mapstructure:"allowed_origins"`
 }
 
 // LogConfig 日志配置
