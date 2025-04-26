@@ -23,6 +23,7 @@ type SessionRepository interface {
 
 // UserRepository 用户仓储接口
 type UserRepository interface {
+	Create(ctx context.Context, user *entity.User) error
 	GetByID(ctx context.Context, id string) (*entity.User, error)
 	UpdateStatus(ctx context.Context, id string, status string) error
 	ListAgents(ctx context.Context) ([]*entity.User, error)
