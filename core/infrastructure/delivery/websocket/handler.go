@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
+	"net/http"
 	"sync"
 
 	"cland.org/cland-chat-service/core/domain/entity"
@@ -16,6 +17,21 @@ type Handler struct {
 	server      *socketio.Server
 	chatUseCase *usecase.ChatUseCase
 	connections sync.Map // map[string]socketio.Conn
+}
+
+func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Allow CORS for WebSocket connections
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Credentials", "true")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+	if r.Method == "OPTIONS" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	h.server.ServeHTTP(w, r)
 }
 
 func NewHandler(chatUseCase *usecase.ChatUseCase) *Handler {

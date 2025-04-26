@@ -5,7 +5,6 @@ import (
 	"sync"
 
 	"cland.org/cland-chat-service/core/infrastructure/delivery/http/handler"
-	"cland.org/cland-chat-service/core/infrastructure/delivery/websocket"
 	"cland.org/cland-chat-service/core/usecase"
 	"github.com/gin-gonic/gin"
 )
@@ -39,11 +38,6 @@ func setupRoutes(r *gin.Engine, chatUseCase *usecase.ChatUseCase) {
 		}
 		c.Next()
 	})
-
-	// Socket.IO路由
-	socketHandler := websocket.NewHandler(chatUseCase)
-	r.GET("/socket.io/*any", gin.WrapH(socketHandler.GetServer()))
-	r.POST("/socket.io/*any", gin.WrapH(socketHandler.GetServer()))
 
 	// API路由分组
 	api := r.Group("/api")

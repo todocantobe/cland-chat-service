@@ -49,7 +49,7 @@ func main() {
 		userRepo,    // userRepo
 	)
 
-	// Create Gin router
+	// Create Gin router for HTTP APIs
 	httpRouter := cland_http.GetRouter(chatUseCase)
 	httpRouter.Use(logger.GinRecovery(zapLogger, true))
 	httpRouter.Use(logger.GinLogger(zapLogger))
@@ -57,34 +57,38 @@ func main() {
 	// Initialize Socket.IO handler
 	socketHandler := cland_ws.NewHandler(chatUseCase)
 
-	// Start Socket.IO server
-	socketServer := &http.Server{
-		Addr:    fmt.Sprintf(":%d", cfg.WS.Port),
-		Handler: socketHandler.GetServer(),
-	}
-
-	// Start HTTP server
+	// Create HTTP server
 	httpServer := &http.Server{
 		Addr:    fmt.Sprintf(":%d", cfg.Server.Port),
 		Handler: httpRouter,
 	}
 
+	// Create WebSocket server
+	wsServer := &http.Server{
+		Addr:    fmt.Sprintf(":%d", cfg.WS.Port),
+		Handler: socketHandler,
+	}
+
 	var wg sync.WaitGroup
 	wg.Add(2)
 
+	// Start HTTP server
 	go func() {
 		defer wg.Done()
-		zapLogger.Info("Starting HTTP server", zap.String("address", httpServer.Addr))
+		zapLogger.Info("Starting HTTP server",
+			zap.String("address", httpServer.Addr))
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			zapLogger.Fatal("Failed to start HTTP server", zap.Error(err))
 		}
 	}()
 
+	// Start WebSocket server
 	go func() {
 		defer wg.Done()
-		zapLogger.Info("Starting Socket.IO server", zap.String("address", socketServer.Addr))
-		if err := socketServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			zapLogger.Fatal("Failed to start Socket.IO server", zap.Error(err))
+		zapLogger.Info("Starting WebSocket server",
+			zap.String("address", wsServer.Addr))
+		if err := wsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			zapLogger.Fatal("Failed to start WebSocket server", zap.Error(err))
 		}
 	}()
 
@@ -114,8 +118,8 @@ func main() {
 		zapLogger.Error("Failed to shutdown HTTP server gracefully", zap.Error(err))
 		shutdownErr = err
 	}
-	if err := socketServer.Shutdown(shutdownCtx); err != nil {
-		zapLogger.Error("Failed to shutdown Socket.IO server gracefully", zap.Error(err))
+	if err := wsServer.Shutdown(shutdownCtx); err != nil {
+		zapLogger.Error("Failed to shutdown WebSocket server gracefully", zap.Error(err))
 		shutdownErr = err
 	}
 
