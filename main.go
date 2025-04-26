@@ -63,7 +63,7 @@ func main() {
 
 	// Initialize WebSocket handler
 	wsHandler := cland_ws.NewHandler(chatUseCase)
-	
+
 	// Create WebSocket server
 	wsServer := &http.Server{
 		Addr: fmt.Sprintf(":%d", cfg.WS.Port),
@@ -95,7 +95,8 @@ func main() {
 			}
 
 			// 获取 userID（从查询参数或认证）
-			userID := r.Header.Get(constants.KEY_USER_ID)
+			userID := r.URL.Query().Get(constants.KEY_USER_ID)
+
 			if userID == "" {
 				zapLogger.Error("Missing userID for WebSocket connection")
 				conn.WriteJSON(cland_ws.WSMessage{
