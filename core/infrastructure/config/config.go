@@ -11,9 +11,15 @@ import (
 // Config 应用配置
 type Config struct {
 	Server ServerConfig `mapstructure:"server"`
+	WS     WSConfig     `mapstructure:"ws"`
 	Log    LogConfig    `mapstructure:"log"`
 	Redis  RedisConfig  `mapstructure:"redis"`
 	DB     DBConfig     `mapstructure:"db"`
+}
+
+// WSConfig WebSocket配置
+type WSConfig struct {
+	Port int `mapstructure:"port"`
 }
 
 // ServerConfig 服务器配置

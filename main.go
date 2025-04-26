@@ -16,6 +16,7 @@ import (
 
 	"cland.org/cland-chat-service/core/infrastructure/config"
 	cland_http "cland.org/cland-chat-service/core/infrastructure/delivery/http"
+	cland_ws "cland.org/cland-chat-service/core/infrastructure/delivery/websocket"
 	"cland.org/cland-chat-service/core/infrastructure/logger"
 	"cland.org/cland-chat-service/core/infrastructure/repository"
 )
@@ -53,20 +54,37 @@ func main() {
 	httpRouter.Use(logger.GinRecovery(zapLogger, true))
 	httpRouter.Use(logger.GinLogger(zapLogger))
 
-	// Start HTTP server (which will also handle Socket.IO)
+	// Initialize Socket.IO handler
+	socketHandler := cland_ws.NewHandler(chatUseCase)
+
+	// Start Socket.IO server
+	socketServer := &http.Server{
+		Addr:    fmt.Sprintf(":%d", cfg.WS.Port),
+		Handler: socketHandler.GetServer(),
+	}
+
+	// Start HTTP server
 	httpServer := &http.Server{
 		Addr:    fmt.Sprintf(":%d", cfg.Server.Port),
 		Handler: httpRouter,
 	}
 
 	var wg sync.WaitGroup
-	wg.Add(1)
+	wg.Add(2)
 
 	go func() {
 		defer wg.Done()
-		zapLogger.Info("Starting HTTP server with Socket.IO", zap.String("address", httpServer.Addr))
+		zapLogger.Info("Starting HTTP server", zap.String("address", httpServer.Addr))
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			zapLogger.Fatal("Failed to start HTTP server", zap.Error(err))
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		zapLogger.Info("Starting Socket.IO server", zap.String("address", socketServer.Addr))
+		if err := socketServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			zapLogger.Fatal("Failed to start Socket.IO server", zap.Error(err))
 		}
 	}()
 
@@ -94,6 +112,10 @@ func main() {
 	var shutdownErr error
 	if err := httpServer.Shutdown(shutdownCtx); err != nil {
 		zapLogger.Error("Failed to shutdown HTTP server gracefully", zap.Error(err))
+		shutdownErr = err
+	}
+	if err := socketServer.Shutdown(shutdownCtx); err != nil {
+		zapLogger.Error("Failed to shutdown Socket.IO server gracefully", zap.Error(err))
 		shutdownErr = err
 	}
 
