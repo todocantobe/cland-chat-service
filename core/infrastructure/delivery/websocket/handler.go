@@ -24,18 +24,35 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Credentials", "true")
 	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, *")
+	w.Header().Set("Access-Control-Expose-Headers", "*")
 
+	// Handle preflight requests
 	if r.Method == "OPTIONS" {
-		w.WriteHeader(http.StatusOK)
+		w.WriteHeader(http.StatusNoContent)
 		return
+	}
+
+	// Ensure proper WebSocket upgrade
+	if r.Header.Get("Upgrade") == "websocket" {
+		w.Header().Set("Connection", "upgrade")
+		w.Header().Set("Upgrade", "websocket")
+		w.Header().Set("Sec-WebSocket-Accept", r.Header.Get("Sec-WebSocket-Key"))
 	}
 
 	h.server.ServeHTTP(w, r)
 }
 
 func NewHandler(chatUseCase *usecase.ChatUseCase) *Handler {
-	server := socketio.NewServer(nil)
+	server := socketio.NewServer(&socketio.Options{
+		Transports:    []string{"websocket", "polling"},
+		AllowUpgrades: true,
+		Cors: &socketio.Cors{
+			AllowOrigin:  "*",
+			AllowMethods: []string{"GET", "POST"},
+			AllowHeaders: []string{"*"},
+		},
+	})
 	h := &Handler{
 		server:      server,
 		chatUseCase: chatUseCase,
