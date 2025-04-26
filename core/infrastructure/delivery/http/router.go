@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"sync"
 
-	ws "cland.org/cland-chat-service/core/infrastructure/delivery/websocket"
 	"cland.org/cland-chat-service/core/infrastructure/delivery/http/handler"
+	ws "cland.org/cland-chat-service/core/infrastructure/delivery/websocket"
 	"cland.org/cland-chat-service/core/usecase"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -59,7 +59,7 @@ func setupRoutes(r *gin.Engine, chatUseCase *usecase.ChatUseCase) {
 		api.GET("/health", func(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{"status": "ok"})
 		})
-		
+
 		// 用户初始化
 		userHandler := handler.NewUserHandler(chatUseCase.UserRepo)
 		api.POST("/init", userHandler.InitUser)

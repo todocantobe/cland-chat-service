@@ -13,7 +13,7 @@ import (
 type ChatUseCase struct {
 	messageRepo repository.MessageRepository
 	sessionRepo repository.SessionRepository
-	userRepo    repository.UserRepository
+	UserRepo    repository.UserRepository
 }
 
 // NewChatUseCase 创建聊天用例
@@ -25,7 +25,7 @@ func NewChatUseCase(
 	return &ChatUseCase{
 		messageRepo: messageRepo,
 		sessionRepo: sessionRepo,
-		userRepo:    userRepo,
+		UserRepo:    userRepo,
 	}
 }
 
@@ -132,7 +132,7 @@ func (uc *ChatUseCase) GetSessionMessages(ctx context.Context, sessionID string)
 // CreateSession 创建会话
 func (uc *ChatUseCase) CreateSession(ctx context.Context, userID string) (*entity.Session, error) {
 	// 获取可用客服
-	agents, err := uc.userRepo.ListAgents(ctx)
+	agents, err := uc.UserRepo.ListAgents(ctx)
 	if err != nil {
 		return nil, err
 	}

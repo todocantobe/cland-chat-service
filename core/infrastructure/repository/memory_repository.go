@@ -36,6 +36,11 @@ func NewMemoryUserRepository() *MemoryUserRepository {
 	return &MemoryUserRepository{}
 }
 
+func (r *MemoryUserRepository) Create(ctx context.Context, user *entity.User) error {
+	r.store.Store(user.ID, user)
+	return nil
+}
+
 // MessageRepository implementation
 func (r *MemoryMessageRepository) Create(ctx context.Context, message *entity.Message) error {
 	r.store.Store(message.MsgID, message)

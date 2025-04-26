@@ -25,29 +25,19 @@ func (h *MessageHandler) GetOfflineMessages(c *gin.Context) {
 
 	ctx := c.Request.Context()
 
-	// Get user's active sessions
-	sessions, err := h.chatUC.sessionRepo.ListActive(ctx)
+	// Get all messages for user
+	allMessages, err := h.chatUC.GetSessionMessages(ctx, userID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get sessions"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get messages"})
 		return
 	}
 
 	var messages []*entity.Message
-	for _, session := range sessions {
-		if session.UserID == userID {
-			// Get offline messages for this session
-			sessionMessages, err := h.chatUC.messageRepo.GetBySessionID(ctx, session.ID)
-			if err != nil {
-				continue
-			}
-
-			for _, msg := range sessionMessages {
-				if msg.Status == entity.StatusOffline {
-					// Update status to delivered
-					if err := h.chatUC.ProcessMessageStatus(ctx, msg.MsgID, entity.StatusDelivered); err == nil {
-						messages = append(messages, msg)
-					}
-				}
+	for _, msg := range allMessages {
+		if msg.Status == entity.StatusOffline {
+			// Update status to delivered
+			if err := h.chatUC.ProcessMessageStatus(ctx, msg.MsgID, entity.StatusDelivered); err == nil {
+				messages = append(messages, msg)
 			}
 		}
 	}
