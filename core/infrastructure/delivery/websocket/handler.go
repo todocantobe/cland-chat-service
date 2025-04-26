@@ -30,11 +30,15 @@ func NewHandler(chatUseCase *usecase.ChatUseCase) *Handler {
 
 // HandleConnection handles WebSocket connection with authentication
 func (h *Handler) HandleConnection(conn *websocket.Conn, cid string) {
+	// Store connection using user ID (extract from cid if needed)
+	userID := cid
+	if len(cid) > 2 && cid[1] == ':' {
+		userID = cid[2:] // Extract U:c00001 -> c00001
+	}
 
-	// Store connection
-	h.connections.Store(cid, conn)
+	h.connections.Store(userID, conn)
 	defer func() {
-		h.connections.Delete(cid)
+		h.connections.Delete(userID)
 		conn.Close()
 	}()
 
@@ -81,8 +85,14 @@ func (h *Handler) processMessage(conn *websocket.Conn, msg entity.Message) error
 
 // pushMessage 推送消息给接收方
 func (h *Handler) pushMessage(msg entity.Message) error {
+	// 获取接收方ID (处理U:前缀)
+	recipientID := msg.Dst
+	if len(msg.Dst) > 2 && msg.Dst[1] == ':' {
+		recipientID = msg.Dst[2:] // Extract U:c00002 -> c00002
+	}
+
 	// 获取接收方连接
-	conn, ok := h.connections.Load(msg.Dst)
+	conn, ok := h.connections.Load(recipientID)
 	if !ok {
 		// 接收方离线，更新为离线状态
 		return h.chatUseCase.ProcessMessageStatus(context.Background(), msg.MsgID, entity.StatusOffline)

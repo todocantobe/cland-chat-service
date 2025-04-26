@@ -51,12 +51,6 @@ func (uc *ChatUseCase) SendMessage(ctx context.Context, message *entity.Message)
 
 // handleChatMessage 处理普通聊天消息
 func (uc *ChatUseCase) handleChatMessage(ctx context.Context, message *entity.Message) error {
-	// 检查会话是否存在
-	_, err := uc.SessionRepo.GetByID(ctx, message.SessionID)
-	if err != nil {
-		return err
-	}
-
 	// 设置初始状态
 	message.Status = entity.StatusNew
 
