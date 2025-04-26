@@ -49,7 +49,7 @@ func (m ChatMessage) Validate() error {
 // UpdateStatus 更新消息状态
 func (m *ChatMessage) UpdateStatus(newStatus uint8) {
 	m.Status = newStatus
-	m.Ts = time.Now().Format(time.RFC3339)
+	m.Ts = entity.StringTimestamp(time.Now().UnixNano() / int64(time.Millisecond))
 }
 
 // IsValidTransition 检查状态转换是否有效

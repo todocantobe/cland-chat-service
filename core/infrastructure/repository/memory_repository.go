@@ -79,7 +79,7 @@ func (r *MemoryMessageRepository) UpdateStatus(ctx context.Context, msgID string
 	}
 	msg := val.(*entity.Message)
 	msg.Status = status
-	msg.Ts = time.Now().Format(time.RFC3339)
+	msg.Ts = entity.StringTimestamp(time.Now().UnixNano() / int64(time.Millisecond))
 	r.store.Store(msgID, msg)
 	return nil
 }

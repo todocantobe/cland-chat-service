@@ -32,8 +32,8 @@ func NewChatUseCase(
 // SendMessage 发送消息
 func (uc *ChatUseCase) SendMessage(ctx context.Context, message *entity.Message) error {
 	// 初始化消息时间戳
-	if message.Ts == "" {
-		message.Ts = time.Now().Format(time.RFC3339)
+	if message.Ts == 0 {
+		message.Ts = entity.StringTimestamp(time.Now().UnixNano() / int64(time.Millisecond))
 	}
 
 	// 处理不同类型的消息
