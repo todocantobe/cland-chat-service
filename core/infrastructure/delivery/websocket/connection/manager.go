@@ -11,7 +11,8 @@ import (
 
 // Manager Socket.IO连接管理器
 type Manager struct {
-	connections map[string]socketio.Conn
+	connections map[string]socketio.Conn   // userID -> connection
+	rooms       map[string]map[string]bool // roomID -> userIDs
 	mu          sync.RWMutex
 	log         *zap.Logger
 }
@@ -20,6 +21,7 @@ type Manager struct {
 func NewManager(log *zap.Logger) *Manager {
 	return &Manager{
 		connections: make(map[string]socketio.Conn),
+		rooms:       make(map[string]map[string]bool),
 		log:         log,
 	}
 }
@@ -72,20 +74,63 @@ func (m *Manager) SendMessage(userID string, message interface{}) error {
 	return nil
 }
 
-// BroadcastMessage 广播消息
+// JoinRoom 加入房间
+func (m *Manager) JoinRoom(userID, roomID string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if _, exists := m.rooms[roomID]; !exists {
+		m.rooms[roomID] = make(map[string]bool)
+	}
+	m.rooms[roomID][userID] = true
+	m.log.Info("User joined room", zap.String("userID", userID), zap.String("roomID", roomID))
+}
+
+// LeaveRoom 离开房间
+func (m *Manager) LeaveRoom(userID, roomID string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if users, exists := m.rooms[roomID]; exists {
+		delete(users, userID)
+		if len(users) == 0 {
+			delete(m.rooms, roomID)
+		}
+		m.log.Info("User left room", zap.String("userID", userID), zap.String("roomID", roomID))
+	}
+}
+
+// BroadcastMessage 广播消息给多个用户
 func (m *Manager) BroadcastMessage(message interface{}, userIDs []string) error {
+	return m.sendToUsers(message, userIDs)
+}
+
+// BroadcastToRoom 广播消息到房间
+func (m *Manager) BroadcastToRoom(message interface{}, roomID string) error {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if users, exists := m.rooms[roomID]; exists {
+		userIDs := make([]string, 0, len(users))
+		for userID := range users {
+			userIDs = append(userIDs, userID)
+		}
+		return m.sendToUsers(message, userIDs)
+	}
+	return nil
+}
+
+// sendToUsers 内部方法：发送消息给多个用户
+func (m *Manager) sendToUsers(message interface{}, userIDs []string) error {
 	data, err := json.Marshal(message)
 	if err != nil {
 		m.log.Error("Failed to marshal message", zap.Error(err))
 		return err
 	}
 
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
 	for _, userID := range userIDs {
 		if conn, ok := m.connections[userID]; ok {
-			conn.Emit("message", data) // Emit方法不返回错误
+			conn.Emit("message", data)
 		}
 	}
 	return nil

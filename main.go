@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cland.org/cland-chat-service/core/infrastructure/delivery/websocket"
 	"context"
 	"fmt"
 	"net/http"
@@ -11,12 +12,10 @@ import (
 	"time"
 
 	"cland.org/cland-chat-service/core/usecase"
-
 	"go.uber.org/zap"
 
 	"cland.org/cland-chat-service/core/infrastructure/config"
 	cland_http "cland.org/cland-chat-service/core/infrastructure/delivery/http"
-	cland_ws "cland.org/cland-chat-service/core/infrastructure/delivery/websocket"
 	"cland.org/cland-chat-service/core/infrastructure/logger"
 	"cland.org/cland-chat-service/core/infrastructure/repository"
 )
@@ -49,13 +48,13 @@ func main() {
 		userRepo,    // userRepo
 	)
 
-	// Create Gin router for HTTP APIs
+	// Initialize HTTP router
 	httpRouter := cland_http.GetRouter(chatUseCase)
 	httpRouter.Use(logger.GinRecovery(zapLogger, true))
 	httpRouter.Use(logger.GinLogger(zapLogger))
 
-	// Initialize Socket.IO handler
-	socketHandler := cland_ws.NewHandler(chatUseCase)
+	// Initialize WebSocket server
+	go websocket.InitWsServer(zapLogger, chatUseCase)
 
 	// Create HTTP server
 	httpServer := &http.Server{
@@ -63,32 +62,16 @@ func main() {
 		Handler: httpRouter,
 	}
 
-	// Create WebSocket server
-	wsServer := &http.Server{
-		Addr:    fmt.Sprintf(":%d", cfg.WS.Port),
-		Handler: socketHandler,
-	}
-
 	var wg sync.WaitGroup
-	wg.Add(2)
+	wg.Add(1)
 
-	// Start HTTP server
+	// Start HTTP server (which now includes WebSocket)
 	go func() {
 		defer wg.Done()
 		zapLogger.Info("Starting HTTP server",
 			zap.String("address", httpServer.Addr))
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			zapLogger.Fatal("Failed to start HTTP server", zap.Error(err))
-		}
-	}()
-
-	// Start WebSocket server
-	go func() {
-		defer wg.Done()
-		zapLogger.Info("Starting WebSocket server",
-			zap.String("address", wsServer.Addr))
-		if err := wsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			zapLogger.Fatal("Failed to start WebSocket server", zap.Error(err))
 		}
 	}()
 
@@ -107,7 +90,7 @@ func main() {
 		zapLogger.Info("Context cancelled, shutting down")
 	}
 
-	zapLogger.Info("Shutting down servers gracefully...")
+	zapLogger.Info("Shutting down server gracefully...")
 
 	// First try graceful shutdown
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -115,18 +98,14 @@ func main() {
 
 	var shutdownErr error
 	if err := httpServer.Shutdown(shutdownCtx); err != nil {
-		zapLogger.Error("Failed to shutdown HTTP server gracefully", zap.Error(err))
-		shutdownErr = err
-	}
-	if err := wsServer.Shutdown(shutdownCtx); err != nil {
-		zapLogger.Error("Failed to shutdown WebSocket server gracefully", zap.Error(err))
+		zapLogger.Error("Failed to shutdown server gracefully", zap.Error(err))
 		shutdownErr = err
 	}
 
 	wg.Wait()
 
 	if shutdownErr != nil {
-		zapLogger.Fatal("Failed to shutdown servers gracefully")
+		zapLogger.Fatal("Failed to shutdown server gracefully")
 	}
-	zapLogger.Info("Servers stopped gracefully")
+	zapLogger.Info("Server stopped gracefully")
 }
