@@ -86,6 +86,7 @@ func (s *WsServer) setupWebSocket() {
 			return fmt.Errorf("missing cland-cid")
 		}
 		s.connManager.AddConnection(conn, conn.ID())
+		s.server.JoinRoom("/", clandCID, conn)
 		return nil
 	})
 
@@ -124,6 +125,7 @@ func (s *WsServer) setupWebSocket() {
 			s.logger.Error("ws serve eror", zap.Error(err))
 		}
 	}()
+
 	defer func(server *socketio.Server) {
 		err := server.Close()
 		if err != nil {
