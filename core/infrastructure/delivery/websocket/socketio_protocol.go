@@ -23,15 +23,15 @@ type SocketIOMessage struct {
 }
 
 const (
-	PacketTypeConnect     = 0
-	PacketTypeDisconnect  = 1
-	PacketTypeEvent       = 2
-	PacketTypeAck         = 3
-	PacketTypeError       = 4
-	PacketTypeBinaryEvent = 5
-	PacketTypeBinaryAck   = 6
-	PacketTypePing        = 8
-	PacketTypePong        = 9
+	PacketTypeConnect      = 0
+	PacketTypeDisconnect   = 1
+	PacketTypeEvent        = 2
+	PacketTypeAck          = 3
+	PacketTypeConnectError = 4 // 更名为 ConnectError 以符合协议5.x
+	PacketTypeBinaryEvent  = 5
+	PacketTypeBinaryAck    = 6
+	PacketTypePing         = 8
+	PacketTypePong         = 9
 )
 
 // SendConnect 发送 Socket.IO 连接确认
@@ -39,9 +39,23 @@ func (p *SocketIOProtocol) SendConnect(conn *websocket.Conn) error {
 	ack := SocketIOMessage{
 		Type:      PacketTypeConnect,
 		Namespace: "/",
-		Data:      json.RawMessage(`{"sid":"` + conn.RemoteAddr().String() + `","pingInterval":25000,"pingTimeout":5000}`),
+		Data:      json.RawMessage(`{"sid":"` + conn.RemoteAddr().String() + `"}`),
 	}
 	data, err := json.Marshal(ack)
+	if err != nil {
+		return err
+	}
+	return conn.WriteMessage(websocket.TextMessage, data)
+}
+
+// SendConnectError 发送连接错误
+func (p *SocketIOProtocol) SendConnectError(conn *websocket.Conn, message string) error {
+	errMsg := SocketIOMessage{
+		Type:      PacketTypeConnectError,
+		Namespace: "/",
+		Data:      json.RawMessage(`{"message":"` + message + `"}`),
+	}
+	data, err := json.Marshal(errMsg)
 	if err != nil {
 		return err
 	}

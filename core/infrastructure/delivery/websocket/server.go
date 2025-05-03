@@ -3,6 +3,7 @@ package websocket
 import (
 	"net/http"
 	"sync"
+	"time"
 
 	"cland.org/cland-chat-service/core/infrastructure/delivery/websocket/connection"
 	"cland.org/cland-chat-service/core/infrastructure/delivery/websocket/handler"
@@ -86,6 +87,16 @@ func (s *WsServer) setupWebSocket() {
 			return
 		}
 
+		// 获取连接参数
+		clandCID := r.URL.Query().Get("cland-cid")
+		if clandCID == "" {
+			if err := s.protocol.SendConnectError(conn, "Missing cland-cid parameter"); err != nil {
+				log.Error("Failed to send connect error", zap.Error(err))
+			}
+			conn.Close()
+			return
+		}
+
 		// 发送 Socket.IO 连接确认
 		if err := s.protocol.SendConnect(conn); err != nil {
 			log.Error("Failed to send connect ack", zap.Error(err))
@@ -132,40 +143,66 @@ func (s *WsServer) handleConnection(conn *websocket.Conn, r *http.Request) {
 		"clandCID": clandCID,
 	}, "/")
 
+	// 设置心跳
+	ticker := time.NewTicker(25 * time.Second)
+	defer ticker.Stop()
+
 	// 处理消息
 	for {
-		_, message, err := conn.ReadMessage()
-		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Error("WebSocket read error", zap.Error(err))
+		select {
+		case <-ticker.C:
+			// 发送心跳ping
+			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				log.Error("Failed to send ping", zap.Error(err))
+				s.connManager.RemoveConnection(clandCID)
+				return
 			}
-			s.connManager.RemoveConnection(clandCID)
-			return
-		}
 
-		// 处理 Socket.IO 协议消息
-		msg, err := s.protocol.parseMessage(message)
-		if err != nil {
-			log.Error("Failed to parse message", zap.Error(err))
-			continue
-		}
-
-		switch msg.Type {
-		case PacketTypeEvent:
-			event, args, err := s.protocol.parseEventData(msg)
+		default:
+			_, message, err := conn.ReadMessage()
 			if err != nil {
-				log.Error("Failed to parse event data", zap.Error(err))
+				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+					log.Error("WebSocket read error", zap.Error(err))
+				}
+				s.connManager.RemoveConnection(clandCID)
+				return
+			}
+
+			// 处理ping消息
+			if message == nil {
+				// 响应pong
+				if err := conn.WriteMessage(websocket.PongMessage, nil); err != nil {
+					log.Error("Failed to send pong", zap.Error(err))
+					s.connManager.RemoveConnection(clandCID)
+					return
+				}
 				continue
 			}
 
-			if event == "message" && len(args) > 0 {
-				if msgStr, ok := args[0].(string); ok {
-					wsHandler.HandleMessage(conn, msgStr)
-				}
+			// 处理 Socket.IO 协议消息
+			msg, err := s.protocol.parseMessage(message)
+			if err != nil {
+				log.Error("Failed to parse message", zap.Error(err))
+				continue
 			}
-		case PacketTypeDisconnect:
-			s.connManager.RemoveConnection(clandCID)
-			return
+
+			switch msg.Type {
+			case PacketTypeEvent:
+				event, args, err := s.protocol.parseEventData(msg)
+				if err != nil {
+					log.Error("Failed to parse event data", zap.Error(err))
+					continue
+				}
+
+				if event == "message" && len(args) > 0 {
+					if msgStr, ok := args[0].(string); ok {
+						wsHandler.HandleMessage(conn, msgStr)
+					}
+				}
+			case PacketTypeDisconnect:
+				s.connManager.RemoveConnection(clandCID)
+				return
+			}
 		}
 	}
 }
