@@ -66,13 +66,32 @@ func (s *WsServer) setupWebSocket() {
 
 	// 创建 HTTP 路由
 	http.HandleFunc("/socket.io/", func(w http.ResponseWriter, r *http.Request) {
+		// 检查是否是 Socket.IO 握手请求
+		if r.URL.Query().Get("EIO") == "" {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		// 发送 Socket.IO 握手响应
+		if r.Method == "GET" && r.URL.Query().Get("transport") == "polling" {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"sid":"","upgrades":["websocket"],"pingInterval":25000,"pingTimeout":5000}`))
+			return
+		}
+
 		// 升级为 WebSocket 连接
 		conn, err := s.upgrader.Upgrade(w, r, nil)
 		if err != nil {
 			log.Error("Failed to upgrade connection", zap.Error(err))
 			return
 		}
-		defer conn.Close()
+
+		// 发送 Socket.IO 连接确认
+		if err := s.protocol.SendConnect(conn); err != nil {
+			log.Error("Failed to send connect ack", zap.Error(err))
+			conn.Close()
+			return
+		}
 
 		// 处理连接
 		s.handleConnection(conn, r)

@@ -7,19 +7,11 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// SocketIOProtocol implements Socket.IO 4.x protocol
 type SocketIOProtocol struct {
-	upgrader websocket.Upgrader
 }
 
-// NewSocketIOProtocol creates a new Socket.IO protocol handler
 func NewSocketIOProtocol() *SocketIOProtocol {
-	return &SocketIOProtocol{
-		upgrader: websocket.Upgrader{
-			ReadBufferSize:  1024,
-			WriteBufferSize: 1024,
-		},
-	}
+	return &SocketIOProtocol{}
 }
 
 // SocketIOMessage represents a Socket.IO protocol message
@@ -31,7 +23,6 @@ type SocketIOMessage struct {
 }
 
 const (
-	// Socket.IO packet types
 	PacketTypeConnect     = 0
 	PacketTypeDisconnect  = 1
 	PacketTypeEvent       = 2
@@ -43,93 +34,24 @@ const (
 	PacketTypePong        = 9
 )
 
-// parseMessage parses raw WebSocket message into Socket.IO protocol format
-func (p *SocketIOProtocol) parseMessage(raw []byte) (*SocketIOMessage, error) {
-	var msg SocketIOMessage
-	if err := json.Unmarshal(raw, &msg); err != nil {
-		return nil, fmt.Errorf("failed to parse Socket.IO message: %w", err)
-	}
-	return &msg, nil
-}
-
-// encodeMessage encodes Socket.IO message to raw WebSocket format
-func (p *SocketIOProtocol) encodeMessage(msg *SocketIOMessage) ([]byte, error) {
-	data, err := json.Marshal(msg)
-	if err != nil {
-		return nil, fmt.Errorf("failed to encode Socket.IO message: %w", err)
-	}
-	return data, nil
-}
-
-// handleMessage processes incoming Socket.IO messages
-func (p *SocketIOProtocol) handleMessage(conn *websocket.Conn, raw []byte) error {
-	msg, err := p.parseMessage(raw)
-	if err != nil {
-		return err
-	}
-
-	switch msg.Type {
-	case PacketTypeConnect:
-		return p.handleConnect(conn, msg)
-	case PacketTypeDisconnect:
-		return p.handleDisconnect(conn, msg)
-	case PacketTypeEvent:
-		return p.handleEvent(conn, msg)
-	case PacketTypePing:
-		return p.handlePing(conn, msg)
-	default:
-		return fmt.Errorf("unsupported Socket.IO packet type: %d", msg.Type)
-	}
-}
-
-// handleConnect handles connection handshake
-func (p *SocketIOProtocol) handleConnect(conn *websocket.Conn, msg *SocketIOMessage) error {
-	// Validate namespace
-	if msg.Namespace != "/" {
-		return fmt.Errorf("invalid namespace: %s", msg.Namespace)
-	}
-
-	// Send connection acknowledgement
+// SendConnect 发送 Socket.IO 连接确认
+func (p *SocketIOProtocol) SendConnect(conn *websocket.Conn) error {
 	ack := SocketIOMessage{
 		Type:      PacketTypeConnect,
-		Namespace: msg.Namespace,
-		Data:      json.RawMessage(`{"sid":"` + conn.RemoteAddr().String() + `"}`),
+		Namespace: "/",
+		Data:      json.RawMessage(`{"sid":"` + conn.RemoteAddr().String() + `","pingInterval":25000,"pingTimeout":5000}`),
 	}
-
-	ackData, err := p.encodeMessage(&ack)
+	data, err := json.Marshal(ack)
 	if err != nil {
 		return err
 	}
-
-	return conn.WriteMessage(websocket.TextMessage, ackData)
+	return conn.WriteMessage(websocket.TextMessage, data)
 }
 
-// handleDisconnect handles disconnection
-func (p *SocketIOProtocol) handleDisconnect(conn *websocket.Conn, msg *SocketIOMessage) error {
-	return conn.Close()
-}
-
-// handleEvent handles incoming events
-func (p *SocketIOProtocol) handleEvent(conn *websocket.Conn, msg *SocketIOMessage) error {
-	// TODO: Implement event handling
-	return nil
-}
-
-// handlePing handles ping/pong heartbeat
-func (p *SocketIOProtocol) handlePing(conn *websocket.Conn, msg *SocketIOMessage) error {
-	pong := SocketIOMessage{
-		Type: PacketTypePong,
-	}
-	pongData, err := p.encodeMessage(&pong)
-	if err != nil {
-		return err
-	}
-	return conn.WriteMessage(websocket.TextMessage, pongData)
-}
-
-// SendEvent sends an event to the client
+// SendEvent 发送 Socket.IO 事件
 func (p *SocketIOProtocol) SendEvent(conn *websocket.Conn, event string, data interface{}, namespace string) error {
-	payload, err := json.Marshal(data)
+	payload := []interface{}{event, data}
+	msgData, err := json.Marshal(payload)
 	if err != nil {
 		return err
 	}
@@ -137,18 +59,27 @@ func (p *SocketIOProtocol) SendEvent(conn *websocket.Conn, event string, data in
 	msg := SocketIOMessage{
 		Type:      PacketTypeEvent,
 		Namespace: namespace,
-		Data:      payload,
+		Data:      msgData,
 	}
 
-	msgData, err := p.encodeMessage(&msg)
+	msgBytes, err := json.Marshal(msg)
 	if err != nil {
 		return err
 	}
 
-	return conn.WriteMessage(websocket.TextMessage, msgData)
+	return conn.WriteMessage(websocket.TextMessage, msgBytes)
 }
 
-// parseEventData parses event data from Socket.IO message
+// parseMessage 解析 Socket.IO 协议消息
+func (p *SocketIOProtocol) parseMessage(data []byte) (*SocketIOMessage, error) {
+	var msg SocketIOMessage
+	if err := json.Unmarshal(data, &msg); err != nil {
+		return nil, fmt.Errorf("failed to parse Socket.IO message: %w", err)
+	}
+	return &msg, nil
+}
+
+// parseEventData 解析事件数据
 func (p *SocketIOProtocol) parseEventData(msg *SocketIOMessage) (string, []interface{}, error) {
 	var raw []json.RawMessage
 	if err := json.Unmarshal(msg.Data, &raw); err != nil {
