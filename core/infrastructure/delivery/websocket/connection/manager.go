@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"sync"
 
-	socketio "github.com/googollee/go-socket.io"
+	"github.com/gorilla/websocket"
 	"go.uber.org/zap"
 )
 
 // Manager Socket.IO连接管理器
 type Manager struct {
-	connections map[string]socketio.Conn   // userID -> connection
+	connections map[string]*websocket.Conn // userID -> connection
 	rooms       map[string]map[string]bool // roomID -> userIDs
 	mu          sync.RWMutex
 	log         *zap.Logger
@@ -20,14 +20,14 @@ type Manager struct {
 // NewManager 创建Socket.IO连接管理器
 func NewManager(log *zap.Logger) *Manager {
 	return &Manager{
-		connections: make(map[string]socketio.Conn),
+		connections: make(map[string]*websocket.Conn),
 		rooms:       make(map[string]map[string]bool),
 		log:         log,
 	}
 }
 
 // AddConnection 添加连接
-func (m *Manager) AddConnection(conn socketio.Conn, userID string) {
+func (m *Manager) AddConnection(conn *websocket.Conn, userID string) {
 	if userID == "" {
 		m.log.Error("Empty user ID provided")
 		return
@@ -68,10 +68,7 @@ func (m *Manager) SendMessage(userID string, message interface{}) error {
 	}
 
 	// 发送消息
-	conn.Emit("message", data) // Emit方法不返回错误
-
-	m.log.Info("Message sent", zap.String("to", userID))
-	return nil
+	return conn.WriteMessage(websocket.TextMessage, data)
 }
 
 // JoinRoom 加入房间
@@ -130,7 +127,9 @@ func (m *Manager) sendToUsers(message interface{}, userIDs []string) error {
 
 	for _, userID := range userIDs {
 		if conn, ok := m.connections[userID]; ok {
-			conn.Emit("message", data)
+			if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
