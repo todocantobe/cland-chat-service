@@ -1,6 +1,7 @@
 package websocket
 
 import (
+	"math/rand"
 	"net/http"
 	"sync"
 	"time"
@@ -12,17 +13,21 @@ import (
 	"go.uber.org/zap"
 )
 
+func init() {
+	rand.Seed(time.Now().UnixNano())
+}
+
 // WsServer 封装 WebSocket 服务器
 type WsServer struct {
 	logger      *zap.Logger
 	chatUseCase *usecase.ChatUseCase
 	upgrader    websocket.Upgrader
-	protocol    *SocketIOProtocol
+	protocol    *EngineIOProtocol
 	connManager *connection.Manager
 	once        sync.Once
 }
 
-// NewWsServer 创建 WebSocket 服务器
+// NewWsServer creates a new WebSocket server
 func NewWsServer(logger *zap.Logger, chatUseCase *usecase.ChatUseCase) *WsServer {
 	return &WsServer{
 		logger:      logger,
@@ -34,7 +39,7 @@ func NewWsServer(logger *zap.Logger, chatUseCase *usecase.ChatUseCase) *WsServer
 				return true // Allow all origins
 			},
 		},
-		protocol: NewSocketIOProtocol(),
+		protocol: NewEngineIOProtocol(),
 	}
 }
 
@@ -73,38 +78,48 @@ func (s *WsServer) setupWebSocket() {
 			return
 		}
 
-		// 发送 Socket.IO 握手响应
+		// Handle polling transport
 		if r.Method == "GET" && r.URL.Query().Get("transport") == "polling" {
-			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(`{"sid":"","upgrades":["websocket"],"pingInterval":25000,"pingTimeout":5000}`))
+			sid := generateSessionID() // Implement this function
+			if err := s.protocol.SendHandshake(w, sid); err != nil {
+				log.Error("Failed to send handshake", zap.Error(err))
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
 			return
 		}
 
-		// 升级为 WebSocket 连接
+		// Handle WebSocket transport
 		conn, err := s.upgrader.Upgrade(w, r, nil)
 		if err != nil {
 			log.Error("Failed to upgrade connection", zap.Error(err))
 			return
 		}
 
-		// 获取连接参数
+		// Get connection parameters
 		clandCID := r.URL.Query().Get("cland-cid")
 		if clandCID == "" {
-			if err := s.protocol.SendConnectError(conn, "Missing cland-cid parameter"); err != nil {
-				log.Error("Failed to send connect error", zap.Error(err))
+			if err := s.protocol.SendPacket(conn, PacketTypeMessage, "Missing cland-cid parameter"); err != nil {
+				log.Error("Failed to send error message", zap.Error(err))
 			}
 			conn.Close()
 			return
 		}
 
-		// 发送 Socket.IO 连接确认
-		if err := s.protocol.SendConnect(conn); err != nil {
-			log.Error("Failed to send connect ack", zap.Error(err))
+		// Send handshake ack
+		sid := generateSessionID() // Implement this function
+		if err := s.protocol.SendPacket(conn, PacketTypeOpen, map[string]interface{}{
+			"sid":          sid,
+			"upgrades":     []string{"websocket"},
+			"pingInterval": 25000,
+			"pingTimeout":  5000,
+		}); err != nil {
+			log.Error("Failed to send handshake ack", zap.Error(err))
 			conn.Close()
 			return
 		}
 
-		// 处理连接
+		// Handle connection
 		s.handleConnection(conn, r)
 	})
 
@@ -116,11 +131,26 @@ func (s *WsServer) setupWebSocket() {
 	}
 }
 
-// handleConnection 处理 WebSocket 连接
+// generateSessionID generates a unique session ID
+func generateSessionID() string {
+	return "sess_" + time.Now().Format("20060102150405") + "_" + randString(10)
+}
+
+// randString generates a random string of given length
+func randString(n int) string {
+	const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	b := make([]byte, n)
+	for i := range b {
+		b[i] = letters[rand.Intn(len(letters))]
+	}
+	return string(b)
+}
+
+// handleConnection handles WebSocket connections
 func (s *WsServer) handleConnection(conn *websocket.Conn, r *http.Request) {
 	log := s.logger.With(zap.String("remote_addr", conn.RemoteAddr().String()))
 
-	// 获取连接参数
+	// Get connection parameters
 	clandCID := r.URL.Query().Get("cland-cid")
 	if clandCID == "" {
 		log.Warn("Missing cland-cid, rejecting connection")
@@ -128,81 +158,52 @@ func (s *WsServer) handleConnection(conn *websocket.Conn, r *http.Request) {
 		return
 	}
 
-	// 创建 WebSocket 处理器
+	// Create WebSocket handler
 	wsHandler := &handler.Handler{
 		ChatUseCase:       s.chatUseCase,
 		ConnectionManager: s.connManager,
 	}
 
-	// 添加连接到管理器
+	// Add connection to manager
 	s.connManager.AddConnection(conn, clandCID)
 
-	// 发送连接成功确认
-	s.protocol.SendEvent(conn, "connection_success", map[string]string{
+	// Send connection success message
+	if err := s.protocol.SendPacket(conn, PacketTypeMessage, map[string]string{
+		"event":    "connection_success",
 		"message":  "Connected successfully",
 		"clandCID": clandCID,
-	}, "/")
+	}); err != nil {
+		log.Error("Failed to send connection success", zap.Error(err))
+	}
 
-	// 设置心跳
-	ticker := time.NewTicker(25 * time.Second)
-	defer ticker.Stop()
+	// Start heartbeat
+	go s.protocol.HandlePing(conn, 25*time.Second, 20*time.Second)
 
-	// 处理消息
+	// Handle messages
 	for {
-		select {
-		case <-ticker.C:
-			// 发送心跳ping
-			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
-				log.Error("Failed to send ping", zap.Error(err))
-				s.connManager.RemoveConnection(clandCID)
-				return
+		_, message, err := conn.ReadMessage()
+		if err != nil {
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+				log.Error("WebSocket read error", zap.Error(err))
 			}
+			s.connManager.RemoveConnection(clandCID)
+			return
+		}
 
-		default:
-			_, message, err := conn.ReadMessage()
-			if err != nil {
-				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-					log.Error("WebSocket read error", zap.Error(err))
-				}
-				s.connManager.RemoveConnection(clandCID)
-				return
-			}
+		// Parse Engine.IO packet
+		packetType, payload, err := s.protocol.ParsePacket(message)
+		if err != nil {
+			log.Error("Failed to parse packet", zap.Error(err))
+			continue
+		}
 
-			// 处理ping消息
-			if message == nil {
-				// 响应pong
-				if err := conn.WriteMessage(websocket.PongMessage, nil); err != nil {
-					log.Error("Failed to send pong", zap.Error(err))
-					s.connManager.RemoveConnection(clandCID)
-					return
-				}
-				continue
-			}
-
-			// 处理 Socket.IO 协议消息
-			msg, err := s.protocol.parseMessage(message)
-			if err != nil {
-				log.Error("Failed to parse message", zap.Error(err))
-				continue
-			}
-
-			switch msg.Type {
-			case PacketTypeEvent:
-				event, args, err := s.protocol.parseEventData(msg)
-				if err != nil {
-					log.Error("Failed to parse event data", zap.Error(err))
-					continue
-				}
-
-				if event == "message" && len(args) > 0 {
-					if msgStr, ok := args[0].(string); ok {
-						wsHandler.HandleMessage(conn, msgStr)
-					}
-				}
-			case PacketTypeDisconnect:
-				s.connManager.RemoveConnection(clandCID)
-				return
-			}
+		switch packetType {
+		case PacketTypeMessage:
+			// Handle message payload
+			wsHandler.HandleMessage(conn, string(payload))
+		case PacketTypeClose:
+			s.connManager.RemoveConnection(clandCID)
+			return
 		}
 	}
 }

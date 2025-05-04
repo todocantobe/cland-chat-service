@@ -1,122 +1,130 @@
 package websocket
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"strings"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
 
-type SocketIOProtocol struct {
+// EngineIOProtocol implements Engine.IO v4 protocol
+type EngineIOProtocol struct {
 }
 
-func NewSocketIOProtocol() *SocketIOProtocol {
-	return &SocketIOProtocol{}
+func NewEngineIOProtocol() *EngineIOProtocol {
+	return &EngineIOProtocol{}
 }
 
-// SocketIOMessage represents a Socket.IO protocol message
-type SocketIOMessage struct {
-	Type      int             `json:"type"` // Socket.IO packet type
-	Namespace string          `json:"nsp"`  // Namespace
-	ID        int             `json:"id"`   // Message ID (for ACK)
-	Data      json.RawMessage `json:"data"` // Raw message data
-}
-
+// Packet types for Engine.IO v4
 const (
-	PacketTypeConnect      = 0
-	PacketTypeDisconnect   = 1
-	PacketTypeEvent        = 2
-	PacketTypeAck          = 3
-	PacketTypeConnectError = 4 // 更名为 ConnectError 以符合协议5.x
-	PacketTypeBinaryEvent  = 5
-	PacketTypeBinaryAck    = 6
-	PacketTypePing         = 8
-	PacketTypePong         = 9
+	PacketTypeOpen    = "0"
+	PacketTypeClose   = "1"
+	PacketTypePing    = "2"
+	PacketTypePong    = "3"
+	PacketTypeMessage = "4"
+	PacketTypeUpgrade = "5"
+	PacketTypeNoop    = "6"
 )
 
-// SendConnect 发送 Socket.IO 连接确认
-func (p *SocketIOProtocol) SendConnect(conn *websocket.Conn) error {
-	ack := SocketIOMessage{
-		Type:      PacketTypeConnect,
-		Namespace: "/",
-		Data:      json.RawMessage(`{"sid":"` + conn.RemoteAddr().String() + `"}`),
-	}
-	data, err := json.Marshal(ack)
-	if err != nil {
-		return err
-	}
-	return conn.WriteMessage(websocket.TextMessage, data)
+// HandshakeData represents the handshake response data
+type HandshakeData struct {
+	SID          string   `json:"sid"`
+	Upgrades     []string `json:"upgrades"`
+	PingInterval int      `json:"pingInterval"`
+	PingTimeout  int      `json:"pingTimeout"`
+	MaxPayload   int      `json:"maxPayload"`
 }
 
-// SendConnectError 发送连接错误
-func (p *SocketIOProtocol) SendConnectError(conn *websocket.Conn, message string) error {
-	errMsg := SocketIOMessage{
-		Type:      PacketTypeConnectError,
-		Namespace: "/",
-		Data:      json.RawMessage(`{"message":"` + message + `"}`),
+// SendHandshake sends the Engine.IO v4 handshake response for polling transport
+func (p *EngineIOProtocol) SendHandshake(w http.ResponseWriter, sid string) error {
+	data := HandshakeData{
+		SID:          sid,
+		Upgrades:     []string{"websocket"},
+		PingInterval: 25000,   // 25 seconds in milliseconds
+		PingTimeout:  20000,   // 20 seconds in milliseconds
+		MaxPayload:   1000000, // 1MB
 	}
-	data, err := json.Marshal(errMsg)
-	if err != nil {
-		return err
+
+	// Set required headers
+	w.Header().Set("Content-Type", "text/plain; charset=UTF-8")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Access-Control-Allow-Origin", "*") // CORS support
+
+	// Engine.IO packet format:
+	// 0{"sid":"...","upgrades":[...],...}
+	response := new(bytes.Buffer)
+	response.WriteByte('0') // Packet type '0' (open)
+
+	encoder := json.NewEncoder(response)
+	if err := encoder.Encode(data); err != nil {
+		return fmt.Errorf("failed to encode handshake data: %w", err)
 	}
-	return conn.WriteMessage(websocket.TextMessage, data)
+
+	// json.Encoder adds a newline, but Engine.IO spec doesn't require it
+	// We'll keep it for compatibility with most clients
+
+	// Write the complete response
+	_, err := w.Write(response.Bytes())
+	return err
 }
 
-// SendEvent 发送 Socket.IO 事件
-func (p *SocketIOProtocol) SendEvent(conn *websocket.Conn, event string, data interface{}, namespace string) error {
-	payload := []interface{}{event, data}
-	msgData, err := json.Marshal(payload)
-	if err != nil {
-		return err
-	}
-
-	msg := SocketIOMessage{
-		Type:      PacketTypeEvent,
-		Namespace: namespace,
-		Data:      msgData,
-	}
-
-	msgBytes, err := json.Marshal(msg)
-	if err != nil {
-		return err
-	}
-
-	return conn.WriteMessage(websocket.TextMessage, msgBytes)
-}
-
-// parseMessage 解析 Socket.IO 协议消息
-func (p *SocketIOProtocol) parseMessage(data []byte) (*SocketIOMessage, error) {
-	var msg SocketIOMessage
-	if err := json.Unmarshal(data, &msg); err != nil {
-		return nil, fmt.Errorf("failed to parse Socket.IO message: %w", err)
-	}
-	return &msg, nil
-}
-
-// parseEventData 解析事件数据
-func (p *SocketIOProtocol) parseEventData(msg *SocketIOMessage) (string, []interface{}, error) {
-	var raw []json.RawMessage
-	if err := json.Unmarshal(msg.Data, &raw); err != nil {
-		return "", nil, err
-	}
-
-	if len(raw) == 0 {
-		return "", nil, fmt.Errorf("empty event data")
-	}
-
-	var event string
-	if err := json.Unmarshal(raw[0], &event); err != nil {
-		return "", nil, err
-	}
-
-	args := make([]interface{}, len(raw)-1)
-	for i, arg := range raw[1:] {
-		var val interface{}
-		if err := json.Unmarshal(arg, &val); err != nil {
-			return "", nil, err
+// SendPacket sends an Engine.IO packet over WebSocket
+func (p *EngineIOProtocol) SendPacket(conn *websocket.Conn, packetType string, data interface{}) error {
+	var msg string
+	switch v := data.(type) {
+	case string:
+		msg = packetType + v
+	case []byte:
+		msg = packetType + string(v)
+	default:
+		jsonData, err := json.Marshal(data)
+		if err != nil {
+			return err
 		}
-		args[i] = val
+		msg = packetType + string(jsonData)
 	}
+	return conn.WriteMessage(websocket.TextMessage, []byte(msg))
+}
 
-	return event, args, nil
+// SendPollingPackets sends multiple packets in polling format
+func (p *EngineIOProtocol) SendPollingPackets(w http.ResponseWriter, packets []string) error {
+	w.Header().Set("Content-Type", "text/plain; charset=UTF-8")
+	_, err := w.Write([]byte(strings.Join(packets, "\x1e")))
+	return err
+}
+
+// ParsePacket parses an incoming Engine.IO packet
+func (p *EngineIOProtocol) ParsePacket(data []byte) (packetType string, payload []byte, err error) {
+	if len(data) == 0 {
+		return "", nil, fmt.Errorf("empty packet")
+	}
+	packetType = string(data[0])
+	if len(data) > 1 {
+		payload = data[1:]
+	}
+	return packetType, payload, nil
+}
+
+// HandlePing starts the heartbeat mechanism
+func (p *EngineIOProtocol) HandlePing(conn *websocket.Conn, interval time.Duration, timeout time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		if err := p.SendPacket(conn, PacketTypePing, nil); err != nil {
+			return
+		}
+
+		// Wait for pong with timeout
+		conn.SetReadDeadline(time.Now().Add(timeout))
+		_, _, err := conn.ReadMessage()
+		if err != nil {
+			return
+		}
+		conn.SetReadDeadline(time.Time{}) // Reset deadline
+	}
 }
