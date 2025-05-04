@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"go.uber.org/zap"
@@ -12,6 +13,7 @@ import (
 // Manager Socket.IO连接管理器
 type Manager struct {
 	connections map[string]*websocket.Conn // userID -> connection
+	lastActive  map[string]time.Time       // userID -> last active time
 	rooms       map[string]map[string]bool // roomID -> userIDs
 	mu          sync.RWMutex
 	log         *zap.Logger
@@ -21,6 +23,7 @@ type Manager struct {
 func NewManager(log *zap.Logger) *Manager {
 	return &Manager{
 		connections: make(map[string]*websocket.Conn),
+		lastActive:  make(map[string]time.Time),
 		rooms:       make(map[string]map[string]bool),
 		log:         log,
 	}
@@ -35,6 +38,7 @@ func (m *Manager) AddConnection(conn *websocket.Conn, userID string) {
 
 	m.mu.Lock()
 	m.connections[userID] = conn
+	m.lastActive[userID] = time.Now()
 	m.mu.Unlock()
 
 	m.log.Info("New Socket.IO connection", zap.String("userID", userID))
@@ -44,9 +48,42 @@ func (m *Manager) AddConnection(conn *websocket.Conn, userID string) {
 func (m *Manager) RemoveConnection(userID string) {
 	m.mu.Lock()
 	delete(m.connections, userID)
+	delete(m.lastActive, userID)
 	m.mu.Unlock()
 
 	m.log.Info("Socket.IO connection removed", zap.String("userID", userID))
+}
+
+// UpdateLastActive 更新最后活跃时间
+func (m *Manager) UpdateLastActive(userID string) {
+	m.mu.Lock()
+	if _, exists := m.connections[userID]; exists {
+		m.lastActive[userID] = time.Now()
+	}
+	m.mu.Unlock()
+}
+
+// CheckTimeoutConnections 检查超时连接并关闭
+func (m *Manager) CheckTimeoutConnections(timeout time.Duration) []string {
+	var timedOut []string
+	now := time.Now()
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for userID, lastActive := range m.lastActive {
+		if now.Sub(lastActive) > timeout {
+			if conn, exists := m.connections[userID]; exists {
+				conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseGoingAway, "connection timeout"))
+				conn.Close()
+				delete(m.connections, userID)
+				delete(m.lastActive, userID)
+				timedOut = append(timedOut, userID)
+			}
+		}
+	}
+
+	return timedOut
 }
 
 // SendMessage 发送消息到指定用户

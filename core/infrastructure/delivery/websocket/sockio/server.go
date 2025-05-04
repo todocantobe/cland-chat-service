@@ -178,67 +178,87 @@ func (s *WsServer) handle0(conn *websocket.Conn, clandCID string) {
 		MessageSender:     messageSender,
 	}
 
+	// Setup heartbeat checker
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
 	// Handle messages
 	for {
-		_, message, err := conn.ReadMessage()
-		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Error("WebSocket read error", zap.Error(err))
+		select {
+		case <-ticker.C:
+			// Check for timed out connections
+			timedOut := s.connManager.CheckTimeoutConnections(60 * time.Second)
+			for _, userID := range timedOut {
+				log.Info("Closed connection due to timeout", zap.String("userID", userID))
 			}
-			s.connManager.RemoveConnection(clandCID)
-			return
-		}
-
-		// Parse Engine.IO packet
-		packetType, payload, err := s.protocol.ParsePacket(message)
-		if err != nil {
-			log.Error("Failed to parse packet", zap.Error(err))
-			continue
-		}
-
-		switch packetType {
-		case PacketTypeMessage:
-			// Parse Socket.IO packet
-			sioType, namespace, sioPayload, _, err := s.protocol.ParseSocketIOPacket(payload)
-			if err != nil {
-				log.Error("Failed to parse Socket.IO packet", zap.Error(err))
-				continue
-			}
-
-			switch sioType {
-			case SocketIOPacketConnect:
-				// Handle namespace connection
-				log.Info("Client connected to namespace", zap.String("namespace", namespace))
-				// Build and send connection ack
-				ackPacket, err := s.protocol.BuildSocketIOPacket(SocketIOPacketConnect, namespace, map[string]string{
-					"sid": generateSessionID(),
-				})
+		default:
+			{
+				_, message, err := conn.ReadMessage()
 				if err != nil {
-					log.Error("Failed to build connect ack", zap.Error(err))
-					continue
+					if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+						log.Error("WebSocket read error", zap.Error(err))
+					}
+					s.connManager.RemoveConnection(clandCID)
+					return
 				}
-				if err := s.protocol.SendPacket(conn, PacketTypeMessage, ackPacket); err != nil {
-					log.Error("Failed to send connect ack", zap.Error(err))
-				}
-			default:
-				// Parse event payload
-				_, eventData, err := s.protocol.ParseEventPayload(sioPayload)
+
+				// Parse Engine.IO packet
+				packetType, payload, err := s.protocol.ParsePacket(message)
 				if err != nil {
-					log.Error("Failed to parse event payload", zap.Error(err))
+					log.Error("Failed to parse packet", zap.Error(err))
 					continue
 				}
 
-				// Process message through handler
-				wsHandler.HandleMessage(conn, string(eventData))
+				switch packetType {
+				case PacketTypePing:
+					// Update last active time
+					s.connManager.UpdateLastActive(clandCID)
+					// Respond to ping
+					if err := s.protocol.SendPacket(conn, PacketTypePong, "probe"); err != nil {
+						log.Error("Failed to send pong", zap.Error(err))
+					}
+				case PacketTypePong:
+					// Update last active time
+					s.connManager.UpdateLastActive(clandCID)
+				case PacketTypeMessage:
+					// Parse Socket.IO packet
+					sioType, namespace, sioPayload, _, err := s.protocol.ParseSocketIOPacket(payload)
+					if err != nil {
+						log.Error("Failed to parse Socket.IO packet", zap.Error(err))
+						continue
+					}
+
+					switch sioType {
+					case SocketIOPacketConnect:
+						// Handle namespace connection
+						log.Info("Client connected to namespace", zap.String("namespace", namespace))
+						// Build and send connection ack
+						ackPacket, err := s.protocol.BuildSocketIOPacket(SocketIOPacketConnect, namespace, map[string]string{
+							"sid": generateSessionID(),
+						})
+						if err != nil {
+							log.Error("Failed to build connect ack", zap.Error(err))
+							continue
+						}
+						if err := s.protocol.SendPacket(conn, PacketTypeMessage, ackPacket); err != nil {
+							log.Error("Failed to send connect ack", zap.Error(err))
+						}
+					default:
+						// Parse event payload
+						_, eventData, err := s.protocol.ParseEventPayload(sioPayload)
+						if err != nil {
+							log.Error("Failed to parse event payload", zap.Error(err))
+							continue
+						}
+
+						// Process message through handler
+						wsHandler.HandleMessage(conn, string(eventData))
+					}
+				case PacketTypeClose:
+					s.connManager.RemoveConnection(clandCID)
+					return
+				}
 			}
-		case PacketTypePing:
-			// Respond to ping
-			if err := s.protocol.SendPacket(conn, PacketTypePong, "probe"); err != nil {
-				log.Error("Failed to send pong", zap.Error(err))
-			}
-		case PacketTypeClose:
-			s.connManager.RemoveConnection(clandCID)
-			return
 		}
 	}
 }
