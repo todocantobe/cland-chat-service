@@ -197,7 +197,7 @@ func (s *WsServer) handle0(conn *websocket.Conn, clandCID string) {
 		switch packetType {
 		case PacketTypeMessage:
 			// Parse Socket.IO packet
-			sioType, namespace, sioPayload, err := s.protocol.ParseSocketIOPacket(payload)
+			sioType, namespace, sioPayload, _, err := s.protocol.ParseSocketIOPacket(payload)
 			if err != nil {
 				log.Error("Failed to parse Socket.IO packet", zap.Error(err))
 				continue
@@ -224,7 +224,7 @@ func (s *WsServer) handle0(conn *websocket.Conn, clandCID string) {
 			}
 		case PacketTypePing:
 			// Respond to ping
-			if err := s.protocol.SendPacket(conn, PacketTypePong, nil); err != nil {
+			if err := s.protocol.SendPacket(conn, PacketTypePong, "probe"); err != nil {
 				log.Error("Failed to send pong", zap.Error(err))
 			}
 		case PacketTypeClose:

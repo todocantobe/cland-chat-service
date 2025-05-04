@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -86,13 +87,12 @@ func (p *EngineIOProtocol) SendHandshake(w http.ResponseWriter, sid string) erro
 // BuildSocketIOPacket constructs a Socket.IO protocol message
 func (p *EngineIOProtocol) BuildSocketIOPacket(packetType string, namespace string, data interface{}) (string, error) {
 	var builder strings.Builder
-	builder.WriteString(PacketTypeMessage) // Engine.IO message type
-	builder.WriteString(packetType)        // Socket.IO packet type
+	builder.WriteString(packetType) // Socket.IO packet type
 
 	if namespace != "" && namespace != "/" {
 		builder.WriteString(namespace)
 	}
-
+	builder.WriteString(",")
 	switch v := data.(type) {
 	case string:
 		builder.WriteString(v)
@@ -109,36 +109,71 @@ func (p *EngineIOProtocol) BuildSocketIOPacket(packetType string, namespace stri
 	return builder.String(), nil
 }
 
-// ParseSocketIOPacket parses a Socket.IO protocol message
-func (p *EngineIOProtocol) ParseSocketIOPacket(data []byte) (packetType string, namespace string, payload []byte, err error) {
+// ParseSocketIOPacket parses a Socket.IO protocol message according to the v4 protocol
+func (p *EngineIOProtocol) ParseSocketIOPacket(data []byte) (packetType string, namespace string, payload []byte, ackID int, err error) {
 	if len(data) < 2 {
-		return "", "", nil, fmt.Errorf("invalid Socket.IO packet length")
+		return "", "", nil, 0, fmt.Errorf("invalid Socket.IO packet length")
 	}
 
-	// First byte is Engine.IO message type (should be "4")
-	if data[0] != PacketTypeMessage[0] {
-		return "", "", nil, fmt.Errorf("not a Socket.IO packet")
+	packetType = string(data[0])
+	remaining := data[1:]
+
+	// Parse namespace (optional)
+	namespace = "/"
+	if len(remaining) > 0 {
+		nsEnd := bytes.IndexByte(remaining, ',')
+		if nsEnd == -1 {
+			// No comma found, entire remaining is namespace
+			namespace = string(remaining)
+			remaining = nil
+		} else {
+			namespace = string(remaining[:nsEnd])
+			remaining = remaining[nsEnd+1:]
+		}
+
+		// Normalize empty namespace to "/"
+		if namespace == "" {
+			namespace = "/"
+		}
 	}
 
-	packetType = string(data[1])
-	remaining := data[2:]
-
-	// Extract namespace if present
-	nsEnd := bytes.IndexByte(remaining, ',')
-	if nsEnd == -1 {
-		nsEnd = len(remaining)
+	// Handle ACK packets (type 3 or 6)
+	if packetType == SocketIOPacketAck || packetType == SocketIOPacketBinaryAck {
+		// Extract ACK ID (numeric prefix before payload)
+		ackEnd := 0
+		for ackEnd < len(remaining) && remaining[ackEnd] >= '0' && remaining[ackEnd] <= '9' {
+			ackID = ackID*10 + int(remaining[ackEnd]-'0')
+			ackEnd++
+		}
+		if ackEnd > 0 {
+			remaining = remaining[ackEnd:]
+			if len(remaining) > 0 && remaining[0] == ',' {
+				remaining = remaining[1:]
+			}
+		}
 	}
 
-	namespace = string(remaining[:nsEnd])
-	if namespace == "" {
-		namespace = "/"
+	// Handle EVENT/BINARY_EVENT packets (type 2 or 5)
+	if packetType == SocketIOPacketEvent || packetType == SocketIOPacketBinaryEvent {
+		// Check for ACK ID at end (e.g. ["event", "data", 123])
+		if len(remaining) > 0 && remaining[0] == '[' {
+			end := len(remaining) - 1
+			if remaining[end] == ']' {
+				// Look for trailing number (ACK ID)
+				lastComma := bytes.LastIndexByte(remaining, ',')
+				if lastComma != -1 {
+					ackStr := string(remaining[lastComma+1 : end])
+					if ackID, err = strconv.Atoi(ackStr); err == nil {
+						remaining = remaining[:lastComma]
+						remaining = append(remaining, ']')
+					}
+				}
+			}
+		}
 	}
 
-	if nsEnd < len(remaining) {
-		payload = remaining[nsEnd+1:]
-	}
-
-	return packetType, namespace, payload, nil
+	payload = remaining
+	return packetType, namespace, payload, ackID, nil
 }
 
 // SendPacket sends an Engine.IO packet over WebSocket
