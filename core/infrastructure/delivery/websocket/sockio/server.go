@@ -1,6 +1,7 @@
 package sockio
 
 import (
+	"errors"
 	"math/rand"
 	"net/http"
 	"strings"
@@ -98,16 +99,6 @@ func (s *WsServer) setupWebSocket() {
 				return
 			}
 
-			// Get connection parameters
-			clandCID := r.URL.Query().Get("cland-cid")
-			if clandCID == "" {
-				if err := s.protocol.SendPacket(conn, PacketTypeMessage, "Missing cland-cid parameter"); err != nil {
-					log.Error("Failed to send error message", zap.Error(err))
-				}
-				conn.Close()
-				return
-			}
-
 			// Send handshake ack
 			sid := generateSessionID() // Implement this function
 			if err := s.protocol.SendPacket(conn, PacketTypeOpen, map[string]interface{}{
@@ -122,7 +113,13 @@ func (s *WsServer) setupWebSocket() {
 			}
 
 			// Handle connection
-			s.handleConnection(conn, r)
+			if clandCid, err := s.handleConnection(conn, r); err != nil {
+				log.Error("Failed to send handshake ack", zap.Error(err))
+				conn.Close()
+				return
+			} else {
+				s.handle0(conn, clandCid)
+			}
 			return
 		}
 
@@ -154,7 +151,7 @@ func randString(n int) string {
 }
 
 // handleConnection handles WebSocket connections
-func (s *WsServer) handleConnection(conn *websocket.Conn, r *http.Request) {
+func (s *WsServer) handleConnection(conn *websocket.Conn, r *http.Request) (string, error) {
 	log := s.logger.With(zap.String("remote_addr", conn.RemoteAddr().String()))
 
 	// Get connection parameters
@@ -162,29 +159,22 @@ func (s *WsServer) handleConnection(conn *websocket.Conn, r *http.Request) {
 	if clandCID == "" {
 		log.Warn("Missing cland-cid, rejecting connection")
 		conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(4001, "missing cland-cid"))
-		return
+		return "", errors.New("miss cid")
 	}
+	// Add connection to manager
+	s.connManager.AddConnection(conn, clandCID)
 
+	return clandCID, nil
+
+}
+
+func (s *WsServer) handle0(conn *websocket.Conn, clandCID string) {
+	log := s.logger.With(zap.String("remote_addr", conn.RemoteAddr().String()))
 	// Create WebSocket handler
 	wsHandler := &handler.Handler{
 		ChatUseCase:       s.chatUseCase,
 		ConnectionManager: s.connManager,
 	}
-
-	// Add connection to manager
-	s.connManager.AddConnection(conn, clandCID)
-
-	// Send connection success message
-	if err := s.protocol.SendPacket(conn, PacketTypeMessage, map[string]string{
-		"event":    "connection_success",
-		"message":  "Connected successfully",
-		"clandCID": clandCID,
-	}); err != nil {
-		log.Error("Failed to send connection success", zap.Error(err))
-	}
-
-	// Start heartbeat
-	go s.protocol.HandlePing(conn, 25*time.Second, 20*time.Second)
 
 	// Handle messages
 	for {
@@ -206,8 +196,37 @@ func (s *WsServer) handleConnection(conn *websocket.Conn, r *http.Request) {
 
 		switch packetType {
 		case PacketTypeMessage:
-			// Handle message payload
-			wsHandler.HandleMessage(conn, string(payload))
+			// Parse Socket.IO packet
+			sioType, namespace, sioPayload, err := s.protocol.ParseSocketIOPacket(payload)
+			if err != nil {
+				log.Error("Failed to parse Socket.IO packet", zap.Error(err))
+				continue
+			}
+
+			switch sioType {
+			case SocketIOPacketConnect:
+				// Handle namespace connection
+				log.Info("Client connected to namespace", zap.String("namespace", namespace))
+				// Build and send connection ack
+				ackPacket, err := s.protocol.BuildSocketIOPacket(SocketIOPacketConnect, namespace, map[string]string{
+					"sid": generateSessionID(),
+				})
+				if err != nil {
+					log.Error("Failed to build connect ack", zap.Error(err))
+					continue
+				}
+				if err := s.protocol.SendPacket(conn, PacketTypeMessage, ackPacket); err != nil {
+					log.Error("Failed to send connect ack", zap.Error(err))
+				}
+			default:
+				// Handle other Socket.IO messages
+				wsHandler.HandleMessage(conn, string(sioPayload))
+			}
+		case PacketTypePing:
+			// Respond to ping
+			if err := s.protocol.SendPacket(conn, PacketTypePong, nil); err != nil {
+				log.Error("Failed to send pong", zap.Error(err))
+			}
 		case PacketTypeClose:
 			s.connManager.RemoveConnection(clandCID)
 			return
