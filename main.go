@@ -1,7 +1,7 @@
 package main
 
 import (
-	"cland.org/cland-chat-service/core/infrastructure/delivery/websocket"
+	"cland.org/cland-chat-service/core/infrastructure/delivery/websocket/sockio"
 	"context"
 	"fmt"
 	"net/http"
@@ -54,7 +54,7 @@ func main() {
 	httpRouter.Use(logger.GinLogger(zapLogger))
 
 	// Initialize WebSocket server
-	go websocket.InitWsServer(zapLogger, chatUseCase)
+	go sockio.InitWsServer(zapLogger, chatUseCase)
 
 	// Create HTTP server
 	httpServer := &http.Server{

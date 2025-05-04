@@ -1,8 +1,9 @@
-package websocket
+package sockio
 
 import (
 	"math/rand"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -89,38 +90,44 @@ func (s *WsServer) setupWebSocket() {
 			return
 		}
 
-		// Handle WebSocket transport
-		conn, err := s.upgrader.Upgrade(w, r, nil)
-		if err != nil {
-			log.Error("Failed to upgrade connection", zap.Error(err))
-			return
-		}
-
-		// Get connection parameters
-		clandCID := r.URL.Query().Get("cland-cid")
-		if clandCID == "" {
-			if err := s.protocol.SendPacket(conn, PacketTypeMessage, "Missing cland-cid parameter"); err != nil {
-				log.Error("Failed to send error message", zap.Error(err))
+		// Handle WebSocket transport - only upgrade if Upgrade header is present
+		if strings.ToLower(r.Header.Get("Upgrade")) == "websocket" {
+			conn, err := s.upgrader.Upgrade(w, r, nil)
+			if err != nil {
+				log.Error("Failed to upgrade connection", zap.Error(err))
+				return
 			}
-			conn.Close()
+
+			// Get connection parameters
+			clandCID := r.URL.Query().Get("cland-cid")
+			if clandCID == "" {
+				if err := s.protocol.SendPacket(conn, PacketTypeMessage, "Missing cland-cid parameter"); err != nil {
+					log.Error("Failed to send error message", zap.Error(err))
+				}
+				conn.Close()
+				return
+			}
+
+			// Send handshake ack
+			sid := generateSessionID() // Implement this function
+			if err := s.protocol.SendPacket(conn, PacketTypeOpen, map[string]interface{}{
+				"sid":          sid,
+				"upgrades":     []string{"websocket"},
+				"pingInterval": 25000,
+				"pingTimeout":  5000,
+			}); err != nil {
+				log.Error("Failed to send handshake ack", zap.Error(err))
+				conn.Close()
+				return
+			}
+
+			// Handle connection
+			s.handleConnection(conn, r)
 			return
 		}
 
-		// Send handshake ack
-		sid := generateSessionID() // Implement this function
-		if err := s.protocol.SendPacket(conn, PacketTypeOpen, map[string]interface{}{
-			"sid":          sid,
-			"upgrades":     []string{"websocket"},
-			"pingInterval": 25000,
-			"pingTimeout":  5000,
-		}); err != nil {
-			log.Error("Failed to send handshake ack", zap.Error(err))
-			conn.Close()
-			return
-		}
-
-		// Handle connection
-		s.handleConnection(conn, r)
+		// Continue with normal HTTP handling if not WebSocket upgrade
+		w.WriteHeader(http.StatusBadRequest)
 	})
 
 	http.Handle("/", http.FileServer(http.Dir("./asset")))

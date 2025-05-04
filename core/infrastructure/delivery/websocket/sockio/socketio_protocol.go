@@ -1,4 +1,4 @@
-package websocket
+package sockio
 
 import (
 	"bytes"
@@ -28,6 +28,17 @@ const (
 	PacketTypeMessage = "4"
 	PacketTypeUpgrade = "5"
 	PacketTypeNoop    = "6"
+)
+
+// Socket.IO protocol types (sent as Engine.IO message type "4")
+const (
+	SocketIOPacketConnect      = "0"
+	SocketIOPacketDisconnect   = "1"
+	SocketIOPacketEvent        = "2"
+	SocketIOPacketAck          = "3"
+	SocketIOPacketConnectError = "4"
+	SocketIOPacketBinaryEvent  = "5"
+	SocketIOPacketBinaryAck    = "6"
 )
 
 // HandshakeData represents the handshake response data
@@ -70,6 +81,64 @@ func (p *EngineIOProtocol) SendHandshake(w http.ResponseWriter, sid string) erro
 	// Write the complete response
 	_, err := w.Write(response.Bytes())
 	return err
+}
+
+// BuildSocketIOPacket constructs a Socket.IO protocol message
+func (p *EngineIOProtocol) BuildSocketIOPacket(packetType string, namespace string, data interface{}) (string, error) {
+	var builder strings.Builder
+	builder.WriteString(PacketTypeMessage) // Engine.IO message type
+	builder.WriteString(packetType)        // Socket.IO packet type
+
+	if namespace != "" && namespace != "/" {
+		builder.WriteString(namespace)
+	}
+
+	switch v := data.(type) {
+	case string:
+		builder.WriteString(v)
+	case []byte:
+		builder.Write(v)
+	default:
+		jsonData, err := json.Marshal(data)
+		if err != nil {
+			return "", err
+		}
+		builder.Write(jsonData)
+	}
+
+	return builder.String(), nil
+}
+
+// ParseSocketIOPacket parses a Socket.IO protocol message
+func (p *EngineIOProtocol) ParseSocketIOPacket(data []byte) (packetType string, namespace string, payload []byte, err error) {
+	if len(data) < 2 {
+		return "", "", nil, fmt.Errorf("invalid Socket.IO packet length")
+	}
+
+	// First byte is Engine.IO message type (should be "4")
+	if data[0] != PacketTypeMessage[0] {
+		return "", "", nil, fmt.Errorf("not a Socket.IO packet")
+	}
+
+	packetType = string(data[1])
+	remaining := data[2:]
+
+	// Extract namespace if present
+	nsEnd := bytes.IndexByte(remaining, ',')
+	if nsEnd == -1 {
+		nsEnd = len(remaining)
+	}
+
+	namespace = string(remaining[:nsEnd])
+	if namespace == "" {
+		namespace = "/"
+	}
+
+	if nsEnd < len(remaining) {
+		payload = remaining[nsEnd+1:]
+	}
+
+	return packetType, namespace, payload, nil
 }
 
 // SendPacket sends an Engine.IO packet over WebSocket
