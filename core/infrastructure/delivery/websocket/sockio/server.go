@@ -219,8 +219,16 @@ func (s *WsServer) handle0(conn *websocket.Conn, clandCID string) {
 					log.Error("Failed to send connect ack", zap.Error(err))
 				}
 			default:
+				// sioPayload=[ "message", { "asd" : "123123"} ]
+				_, eventData, err := s.protocol.ParseEventPayload(sioPayload)
+				if err != nil {
+					// 处理错误
+				}
+				// eventName = "message"
+				// eventData = []byte(`{"asd":"123123"}`)
+
 				// Handle other Socket.IO messages
-				wsHandler.HandleMessage(conn, string(sioPayload))
+				wsHandler.HandleMessage(conn, string(eventData))
 			}
 		case PacketTypePing:
 			// Respond to ping

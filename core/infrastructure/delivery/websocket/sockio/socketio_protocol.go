@@ -155,15 +155,17 @@ func (p *EngineIOProtocol) ParseSocketIOPacket(data []byte) (packetType string, 
 
 	// Handle EVENT/BINARY_EVENT packets (type 2 or 5)
 	if packetType == SocketIOPacketEvent || packetType == SocketIOPacketBinaryEvent {
-		// Check for ACK ID at end (e.g. ["event", "data", 123])
+		// Check for JSON array format (e.g. ["event", data] or ["event", data, ackId])
 		if len(remaining) > 0 && remaining[0] == '[' {
 			end := len(remaining) - 1
 			if remaining[end] == ']' {
-				// Look for trailing number (ACK ID)
+				// Extract event data (may contain ACK ID)
 				lastComma := bytes.LastIndexByte(remaining, ',')
 				if lastComma != -1 {
+					// Check if last element is ACK ID (number)
 					ackStr := string(remaining[lastComma+1 : end])
-					if ackID, err = strconv.Atoi(ackStr); err == nil {
+					if ackNum, err := strconv.Atoi(ackStr); err == nil {
+						ackID = ackNum
 						remaining = remaining[:lastComma]
 						remaining = append(remaining, ']')
 					}
@@ -211,6 +213,32 @@ func (p *EngineIOProtocol) ParsePacket(data []byte) (packetType string, payload 
 		payload = data[1:]
 	}
 	return packetType, payload, nil
+}
+
+// ParseEventPayload parses a Socket.IO event payload in the format ["eventName", eventData]
+func (p *EngineIOProtocol) ParseEventPayload(payload []byte) (eventName string, eventData []byte, err error) {
+	if len(payload) == 0 {
+		return "", nil, fmt.Errorf("empty payload")
+	}
+
+	// Parse the JSON array
+	var arr []json.RawMessage
+	if err := json.Unmarshal(payload, &arr); err != nil {
+		return "", nil, fmt.Errorf("invalid event payload format: %w", err)
+	}
+
+	if len(arr) < 2 {
+		return "", nil, fmt.Errorf("event payload must contain at least 2 elements")
+	}
+
+	// Extract event name
+	if err := json.Unmarshal(arr[0], &eventName); err != nil {
+		return "", nil, fmt.Errorf("failed to parse event name: %w", err)
+	}
+
+	// Return event data as raw JSON
+	eventData = arr[1]
+	return eventName, eventData, nil
 }
 
 // HandlePing starts the heartbeat mechanism
