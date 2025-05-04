@@ -171,9 +171,11 @@ func (s *WsServer) handleConnection(conn *websocket.Conn, r *http.Request) (stri
 func (s *WsServer) handle0(conn *websocket.Conn, clandCID string) {
 	log := s.logger.With(zap.String("remote_addr", conn.RemoteAddr().String()))
 	// Create WebSocket handler
+	messageSender := NewSocketIOMessageSender(s.protocol, s.logger)
 	wsHandler := &handler.Handler{
 		ChatUseCase:       s.chatUseCase,
 		ConnectionManager: s.connManager,
+		MessageSender:     messageSender,
 	}
 
 	// Handle messages
@@ -219,15 +221,14 @@ func (s *WsServer) handle0(conn *websocket.Conn, clandCID string) {
 					log.Error("Failed to send connect ack", zap.Error(err))
 				}
 			default:
-				// sioPayload=[ "message", { "asd" : "123123"} ]
+				// Parse event payload
 				_, eventData, err := s.protocol.ParseEventPayload(sioPayload)
 				if err != nil {
-					// 处理错误
+					log.Error("Failed to parse event payload", zap.Error(err))
+					continue
 				}
-				// eventName = "message"
-				// eventData = []byte(`{"asd":"123123"}`)
 
-				// Handle other Socket.IO messages
+				// Process message through handler
 				wsHandler.HandleMessage(conn, string(eventData))
 			}
 		case PacketTypePing:

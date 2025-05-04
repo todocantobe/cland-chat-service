@@ -7,6 +7,7 @@ import (
 	"log"
 	"sync"
 
+	cland_errors "cland.org/cland-chat-service/common/errors"
 	"cland.org/cland-chat-service/core/domain/entity"
 	"cland.org/cland-chat-service/core/infrastructure/delivery/websocket/connection"
 	"cland.org/cland-chat-service/core/infrastructure/delivery/websocket/dto"
@@ -17,6 +18,7 @@ import (
 type Handler struct {
 	ChatUseCase       *usecase.ChatUseCase
 	ConnectionManager *connection.Manager
+	MessageSender     dto.MessageSender
 	connections       sync.Map // map[string]*websocket.Conn
 }
 
@@ -85,13 +87,8 @@ func (h *Handler) pushMessage(msg entity.Message) error {
 
 	msg.Status = entity.StatusDelivered
 	wsMsg := dto.FromEntity(msg).ToWSMessage()
-	data, err := json.Marshal(wsMsg)
-	if err != nil {
-		return err
-	}
-
 	if conn, ok := h.connections.Load(recipientID); ok {
-		return conn.(*websocket.Conn).WriteMessage(websocket.TextMessage, data)
+		return h.MessageSender.SendEvent(conn.(*websocket.Conn), "/", "message", wsMsg)
 	}
 
 	// 接收方离线，更新为离线状态
@@ -100,26 +97,17 @@ func (h *Handler) pushMessage(msg entity.Message) error {
 
 // sendError 发送错误消息
 func (h *Handler) sendError(conn *websocket.Conn, errMsg string) {
-	errResp := dto.WSMessage{
-		Code: 400,
-		Msg:  errMsg,
-		Data: nil,
-	}
-	data, _ := json.Marshal(errResp)
-	conn.WriteMessage(websocket.TextMessage, data)
+	h.MessageSender.SendEvent(conn, "/socket.io/", "message", cland_errors.Err500)
 }
 
 // BroadcastMessage 广播消息给多个用户
 func (h *Handler) BroadcastMessage(msg entity.Message, userIDs []string) error {
 	wsMsg := dto.FromEntity(msg).ToWSMessage()
-	data, err := json.Marshal(wsMsg)
-	if err != nil {
-		return err
-	}
-
 	for _, userID := range userIDs {
 		if conn, ok := h.connections.Load(userID); ok {
-			conn.(*websocket.Conn).WriteMessage(websocket.TextMessage, data)
+			if err := h.MessageSender.SendEvent(conn.(*websocket.Conn), "/", "message", wsMsg); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

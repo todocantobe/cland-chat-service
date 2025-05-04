@@ -5,7 +5,14 @@ import (
 	"time"
 
 	"cland.org/cland-chat-service/core/domain/entity"
+	"github.com/gorilla/websocket"
 )
+
+// MessageSender defines the interface for sending messages
+type MessageSender interface {
+	SendEvent(conn *websocket.Conn, namespace string, eventName string, data interface{}) error
+	SendError(conn *websocket.Conn, namespace string, err error) error
+}
 
 // WSMessage WebSocket通用消息结构
 type WSMessage struct {
