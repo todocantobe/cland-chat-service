@@ -1,7 +1,7 @@
 ### Initialize Visitor Session
 POST http://localhost:8080/api/init
 Content-Type: application/json
-cland-cid: test_visitor_001
+cland-cid: c439c2359-2fdf-413d-897c-035055776497
 
 {
   "deviceInfo": "test_device"
@@ -11,14 +11,14 @@ cland-cid: test_visitor_001
   client.test("Session initialized", function() {
     client.assert(response.status === 200, "Response status is not 200");
     client.assert(response.body.hasOwnProperty("sessionId"), "Cannot find sessionId");
-    client.global.set("visitor_cid", "test_visitor_001");
+    client.global.set("visitor_cid", "c001");
   });
 %}
 
 ### Send Chat Message
 POST http://localhost:8080/api/messages
 Content-Type: application/json
-cland-cid: test_visitor_001
+cland-cid: c001
 
 {
   "content": "Hello, I need help",
@@ -34,7 +34,7 @@ cland-cid: test_visitor_001
 ### Check Offline Messages
 GET http://localhost:8080/api/messages/offline
 Content-Type: application/json
-cland-cid: test_visitor_001
+cland-cid: c001
 
 > {%
   client.test("Got offline messages", function() {

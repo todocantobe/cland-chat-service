@@ -17,6 +17,15 @@ const (
 
 	//业务相关
 	KEY_USER_ID = "cland-cid"
+
+	// Cookie配置
+	CookieMaxAgeOneYear = 31536000 // 1年
+	CookiePathRoot      = "/"
+	CookieSecure        = true
+	CookieHttpOnly      = true
+
+	// 错误码
+	ErrorCodeUserInitFailed = 50010010001
 )
 
 const (
