@@ -17,9 +17,10 @@ type MsgType uint8
 
 // Content type enum values and type
 const (
-	ContentTypeText  = 1 // 文本
-	ContentTypeImage = 2 // 图片
-	ContentTypeFile  = 3 // 文件
+	ContentTypeText     = 1   // 文本
+	ContentTypeImage    = 2   // 图片
+	ContentTypeFile     = 3   // 文件
+	ContentTypeTransfer = 520 // 转人工
 )
 
 type ContentType uint8
