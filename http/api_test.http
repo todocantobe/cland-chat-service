@@ -1,0 +1,22 @@
+### Health Check
+GET http://localhost:8080/api/health
+
+### Initialize User
+POST http://localhost:8080/api/init
+Content-Type: application/json
+
+{}
+
+### Get Messages
+GET http://localhost:8080/api/messages?userId=test123
+
+### Send Message
+POST http://localhost:8080/api/chat
+Content-Type: application/json
+Cookie: cland-cid=testcid123
+
+{
+  "sessionId": "session123",
+  "content": "Hello world",
+  "senderId": "user123"
+}

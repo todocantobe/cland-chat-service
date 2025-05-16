@@ -2,10 +2,12 @@ package handler
 
 import (
 	"net/http"
+	"time"
 
 	"cland.org/cland-chat-service/core/domain/entity"
 	"cland.org/cland-chat-service/core/usecase"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 type MessageHandler struct {
@@ -25,27 +27,66 @@ func (h *MessageHandler) GetOfflineMessages(c *gin.Context) {
 
 	ctx := c.Request.Context()
 
-	// Get all messages for user
-	allMessages, err := h.chatUC.GetSessionMessages(ctx, userID)
+	messages, err := h.chatUC.GetOfflineMessages(ctx, userID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get messages"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get offline messages"})
 		return
-	}
-
-	var messages []*entity.Message
-	for _, msg := range allMessages {
-		if msg.Status == entity.StatusOffline {
-			// Update status to delivered
-			if err := h.chatUC.ProcessMessageStatus(ctx, msg.MsgID, entity.StatusDelivered); err == nil {
-				messages = append(messages, msg)
-			}
-		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"status": "ok",
 		"data": gin.H{
 			"messages": messages,
+		},
+	})
+}
+
+func (h *MessageHandler) SendChatMessage(c *gin.Context) {
+	var req struct {
+		SessionID string `json:"sessionId"`
+		Content   string `json:"content"`
+		SenderID  string `json:"senderId"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+
+	ctx := c.Request.Context()
+	// Generate proper IDs
+	msgID := "m" + uuid.New().String()
+	subSessionID := "ss" + uuid.New().String()
+
+	message := &entity.Message{
+		MsgID:       msgID,
+		SessionID:   req.SessionID,
+		Content:     req.Content,
+		Src:         "U:" + req.SenderID,
+		Dst:         "S:auto", // Default to bot
+		MsgType:     entity.MsgTypeMessage,
+		ContentType: entity.ContentTypeText,
+		Status:      entity.StatusNew,
+		Ts:          entity.StringTimestamp(time.Now().UnixNano() / int64(time.Millisecond)),
+		Ext: map[string]interface{}{
+			"subSessionId": subSessionID,
+		},
+	}
+
+	if err := h.chatUC.SendMessage(ctx, message); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to send message"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status": "ok",
+		"data": gin.H{
+			"msgId":        message.MsgID,
+			"sessionId":    message.SessionID,
+			"subSessionId": message.SubSessionID,
+			"content":      message.Content,
+			"src":          message.Src,
+			"ts":           message.Ts,
 		},
 	})
 }

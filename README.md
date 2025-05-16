@@ -44,10 +44,17 @@ cland-chat-service/
 
 ### HTTP API
 
-- `POST /api/chat/sessions` - 创建会话
-- `POST /api/chat/sessions/:id/messages` - 发送消息
-- `GET /api/chat/sessions/:id/messages` - 获取消息
-- `POST /api/chat/sessions/:id/close` - 关闭会话
+- `GET /api/health` - 健康检查
+- `POST /api/init` - 用户初始化
+- `GET /api/messages` - 获取消息
+  - 返回格式:
+    ```json
+    {
+      "history": [...],  // 历史消息
+      "offline": [...]   // 离线消息
+    }
+    ```
+- `POST /api/chat` - 发送消息
 
 ### WebSocket API
 

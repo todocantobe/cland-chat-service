@@ -47,9 +47,14 @@ func setupRoutes(r *gin.Engine, chatUseCase *usecase.ChatUseCase) {
 		})
 
 		// User initialization
+		userUC := usecase.NewUserUseCase(
+			chatUseCase.UserRepo,
+			chatUseCase.SessionRepo,
+		)
 		userHandler := handler.NewUserHandler(
 			chatUseCase.UserRepo,
 			chatUseCase.SessionRepo,
+			userUC,
 		)
 		api.POST("/init", userHandler.InitUser)
 

@@ -71,16 +71,17 @@ func (st StringTimestamp) MarshalJSON() ([]byte, error) {
 
 // Message 消息实体
 type Message struct {
-	MsgType     uint8                  `json:"msgType"` // 1=MSG, 2=NTF, 3=ACK
-	SessionID   string                 `json:"sessionId"`
-	MsgID       string                 `json:"msgId"`
-	Src         string                 `json:"src"` // U:user_xxx, A:agent_xxx, S:system, UA:admin_xxx
-	Dst         string                 `json:"dst"`
-	Content     string                 `json:"content"`
-	ContentType uint8                  `json:"contentType"` // 1=TEXT, 2=IMAGE, 3=FILE
-	Ts          StringTimestamp        `json:"ts"`          // Unix毫秒时间戳
-	Status      uint8                  `json:"status"`      // 1=NEW, ..., 7=READ
-	Ext         map[string]interface{} `json:"ext"`         // 扩展字段
+	MsgType      uint8                  `json:"msgType"` // 1=MSG, 2=NTF, 3=ACK
+	SessionID    string                 `json:"sessionId"`
+	SubSessionID string                 `json:"subSessionId"`
+	MsgID        string                 `json:"msgId"`
+	Src          string                 `json:"src"` // U:user_xxx, A:agent_xxx, S:system, UA:admin_xxx
+	Dst          string                 `json:"dst"`
+	Content      string                 `json:"content"`
+	ContentType  uint8                  `json:"contentType"` // 1=TEXT, 2=IMAGE, 3=FILE
+	Ts           StringTimestamp        `json:"ts"`          // Unix毫秒时间戳
+	Status       uint8                  `json:"status"`      // 1=NEW, ..., 7=READ
+	Ext          map[string]interface{} `json:"ext"`         // 扩展字段
 }
 
 // Session 会话实体

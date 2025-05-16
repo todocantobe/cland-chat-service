@@ -155,6 +155,27 @@ func (uc *ChatUseCase) CloseSession(ctx context.Context, sessionID string) error
 	return uc.SessionRepo.UpdateStatus(ctx, sessionID, "closed")
 }
 
+// GetOfflineMessages 获取离线消息并更新状态
+func (uc *ChatUseCase) GetOfflineMessages(ctx context.Context, userID string) ([]*entity.Message, error) {
+	// Get all messages for user
+	allMessages, err := uc.GetSessionMessages(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	var messages []*entity.Message
+	for _, msg := range allMessages {
+		if msg.Status == entity.StatusOffline {
+			// Update status to delivered
+			if err := uc.ProcessMessageStatus(ctx, msg.MsgID, entity.StatusDelivered); err == nil {
+				messages = append(messages, msg)
+			}
+		}
+	}
+
+	return messages, nil
+}
+
 // ProcessMessageStatus 处理消息状态更新
 func (uc *ChatUseCase) ProcessMessageStatus(ctx context.Context, msgID string, newStatus uint8) error {
 	// 获取消息
