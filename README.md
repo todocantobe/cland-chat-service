@@ -42,6 +42,15 @@ cland-chat-service/
 
 ## API接口
 
+### API Documentation
+
+Access Swagger UI at `/swagger/index.html` (e.g. http://localhost:8080/swagger/index.html) for interactive API documentation including:
+
+- All available endpoints
+- Request/response schemas
+- Example requests
+- Ability to test endpoints directly
+
 ### HTTP API
 
 - `GET /api/health` - 健康检查
