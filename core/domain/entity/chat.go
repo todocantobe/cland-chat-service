@@ -6,21 +6,25 @@ import (
 	"time"
 )
 
-// 消息类型枚举
+// Message type enum values and type
 const (
 	MsgTypeMessage      = 1 // 普通消息
 	MsgTypeNotification = 2 // 通知
 	MsgTypeAck          = 3 // 确认
 )
 
-// 内容类型枚举
+type MsgType uint8
+
+// Content type enum values and type
 const (
 	ContentTypeText  = 1 // 文本
 	ContentTypeImage = 2 // 图片
 	ContentTypeFile  = 3 // 文件
 )
 
-// 消息状态枚举
+type ContentType uint8
+
+// Message status enum values and type
 const (
 	StatusNew       = 1 // 新建
 	StatusHistory   = 2 // 历史消息
@@ -30,6 +34,8 @@ const (
 	StatusDelivered = 6 // 已送达
 	StatusRead      = 7 // 已读
 )
+
+type Status uint8
 
 // StringTimestamp is a custom type for parsing string timestamps into int64
 type StringTimestamp int64

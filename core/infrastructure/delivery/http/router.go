@@ -6,7 +6,10 @@ import (
 
 	"cland.org/cland-chat-service/core/infrastructure/delivery/http/handler"
 	"cland.org/cland-chat-service/core/usecase"
+	_ "cland.org/cland-chat-service/docs"
 	"github.com/gin-gonic/gin"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 )
 
 var (
@@ -23,6 +26,9 @@ func GetRouter(chatUseCase *usecase.ChatUseCase) *gin.Engine {
 }
 
 func setupRoutes(r *gin.Engine, chatUseCase *usecase.ChatUseCase) {
+	// Swagger route
+	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+
 	// CORS middleware
 	r.Use(func(c *gin.Context) {
 		// Set CORS headers for all responses

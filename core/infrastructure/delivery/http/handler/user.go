@@ -4,9 +4,17 @@ import (
 	"net/http"
 
 	"cland.org/cland-chat-service/core/domain/repository"
+	"cland.org/cland-chat-service/core/infrastructure/delivery/http/response"
 	"cland.org/cland-chat-service/core/usecase"
 	"github.com/gin-gonic/gin"
 )
+
+// UserResponse represents the response structure for user operations
+type UserResponse struct {
+	SessionID    string `json:"sessionId"`
+	SubSessionID string `json:"subSessionId"`
+	Token        string `json:"token"`
+}
 
 type UserHandler struct {
 	userRepo    repository.UserRepository
@@ -26,6 +34,15 @@ func NewUserHandler(
 	}
 }
 
+// InitUser initializes a new user session
+// @Summary Initialize user session
+// @Description Creates a new user session and returns authentication tokens
+// @Tags user
+// @Accept json
+// @Produce json
+// @Success 200 {object} UserResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /api/init [post]
 func (h *UserHandler) InitUser(c *gin.Context) {
 	ctx := c.Request.Context()
 
@@ -38,10 +55,10 @@ func (h *UserHandler) InitUser(c *gin.Context) {
 	// Call usecase
 	res, err := h.userUC.InitUser(ctx, existingCID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code": 50010010001,
-			"msg":  "Failed to initialize user",
-			"data": gin.H{
+		c.JSON(http.StatusInternalServerError, response.Response{
+			Code: 50010010001,
+			Msg:  "Failed to initialize user",
+			Data: gin.H{
 				"error_field":  "user",
 				"error_detail": err.Error(),
 			},
@@ -61,10 +78,10 @@ func (h *UserHandler) InitUser(c *gin.Context) {
 	)
 
 	// Return response matching spec
-	c.JSON(http.StatusOK, gin.H{
-		"code": 200,
-		"msg":  "Initialization successful",
-		"data": gin.H{
+	c.JSON(http.StatusOK, response.Response{
+		Code: 200,
+		Msg:  "Initialization successful",
+		Data: gin.H{
 			"sessionId":    res.SessionID,
 			"subSessionId": res.SubSessionID,
 			"token":        res.Token,
