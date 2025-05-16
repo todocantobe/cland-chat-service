@@ -6,7 +6,7 @@ import (
 
 	"cland.org/cland-chat-service/core/infrastructure/delivery/http/handler"
 	"cland.org/cland-chat-service/core/usecase"
-	_ "cland.org/cland-chat-service/docs"
+	_ "cland.org/cland-chat-service/docs/swagger"
 	"github.com/gin-gonic/gin"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"

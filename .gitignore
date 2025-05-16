@@ -7,3 +7,4 @@ runtime/*
 /app.log
 /vendor/
 /vendor/*
+/cland-chat-service.debug.exe

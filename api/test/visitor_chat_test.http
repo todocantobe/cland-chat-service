@@ -1,0 +1,44 @@
+### Initialize Visitor Session
+POST http://localhost:8080/api/init
+Content-Type: application/json
+cland-cid: test_visitor_001
+
+{
+  "deviceInfo": "test_device"
+}
+
+> {%
+  client.test("Session initialized", function() {
+    client.assert(response.status === 200, "Response status is not 200");
+    client.assert(response.body.hasOwnProperty("sessionId"), "Cannot find sessionId");
+    client.global.set("visitor_cid", "test_visitor_001");
+  });
+%}
+
+### Send Chat Message
+POST http://localhost:8080/api/messages
+Content-Type: application/json
+cland-cid: test_visitor_001
+
+{
+  "content": "Hello, I need help",
+  "sessionId": "{{$guid}}"
+}
+
+> {%
+  client.test("Message sent successfully", function() {
+    client.assert(response.status === 200, "Response status is not 200");
+  });
+%}
+
+### Check Offline Messages
+GET http://localhost:8080/api/messages/offline
+Content-Type: application/json
+cland-cid: test_visitor_001
+
+> {%
+  client.test("Got offline messages", function() {
+    client.assert(response.status === 200, "Response status is not 200");
+    client.assert(response.body.hasOwnProperty("data"), "No message data returned");
+  });
+%}
