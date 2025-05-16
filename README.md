@@ -29,6 +29,9 @@ cland-chat-service/
 └── go.mod                # Go模块文件
 ```
 
+./http/                  # HTTP REST client 执行的脚本目录
+./doc/                   # 设计文档&需求反讲文档目录
+
 ## 核心功能
 
 - 实时聊天
