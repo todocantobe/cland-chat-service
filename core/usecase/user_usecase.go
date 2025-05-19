@@ -59,7 +59,7 @@ func (uc *UserUseCase) InitUser(ctx context.Context, existingCID string) (*InitU
 
 	session := &entity.Session{
 		ID:           sessionID,
-		UserID:       clandCID,
+		CID:          clandCID,
 		SubSessionID: subSessionID,
 		Status:       "active",
 		CreatedAt:    time.Now(),

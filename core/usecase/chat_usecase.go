@@ -138,8 +138,8 @@ func (uc *ChatUseCase) CreateSession(ctx context.Context, userID string) (*entit
 	}
 
 	session := &entity.Session{
-		UserID:  userID,
-		AgentID: agentID,
+		CID:     userID,
+		AgentId: agentID,
 		Status:  "active",
 	}
 

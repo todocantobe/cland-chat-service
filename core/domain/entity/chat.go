@@ -88,25 +88,40 @@ type Message struct {
 	ContentType  uint8                  `json:"contentType"` // 1=TEXT, 2=IMAGE, 3=FILE
 	Ts           StringTimestamp        `json:"ts"`          // Unix毫秒时间戳
 	Status       uint8                  `json:"status"`      // 1=NEW, ..., 7=READ
-	Ext          map[string]interface{} `json:"ext"`         // 扩展字段
+	Ext          map[string]interface{} `json:"ext"`         // 扩展字段(JSON object)
+	CreatedBy    string                 `json:"createdBy"`
+	UpdatedBy    string                 `json:"updatedBy"`
+	CreatedAt    time.Time              `json:"createdAt"`
+	UpdatedAt    time.Time              `json:"updatedAt"`
 }
 
 // Session 会话实体
 type Session struct {
 	ID           string    `json:"id"`
+	CID          string    `json:"cid"` // Customer ID
+	AgentId      string    `json:"agentId"`
+	SessionID    string    `json:"sessionId"`
 	SubSessionID string    `json:"subSessionId"`
-	UserID       string    `json:"userId"`
-	AgentID      string    `json:"agentId"`
+	StartTime    time.Time `json:"startTime"`
+	EndTime      time.Time `json:"endTime"`
 	Status       string    `json:"status"` // active, closed
+	CreatedBy    string    `json:"createdBy"`
+	UpdatedBy    string    `json:"updatedBy"`
 	CreatedAt    time.Time `json:"createdAt"`
 	UpdatedAt    time.Time `json:"updatedAt"`
 }
 
 // User 用户实体
 type User struct {
-	ID         string `json:"id"`
-	Username   string `json:"username"`
-	Role       string `json:"role"`   // customer, agent, admin
-	Status     string `json:"status"` // online, offline, busy
-	LastActive time.Time
+	ID         string    `json:"id"`
+	UID        string    `json:"uid"` // Unique user ID
+	Username   string    `json:"username"`
+	Query      string    `json:"query"`
+	Role       string    `json:"role"`   // customer, agent, admin
+	Status     string    `json:"status"` // online, offline, busy
+	CreatedBy  string    `json:"createdBy"`
+	UpdatedBy  string    `json:"updatedBy"`
+	CreatedAt  time.Time `json:"createdAt"`
+	UpdatedAt  time.Time `json:"updatedAt"`
+	LastActive time.Time `json:"lastActive"`
 }
