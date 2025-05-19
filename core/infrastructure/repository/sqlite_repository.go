@@ -8,30 +8,11 @@ import (
 	"time"
 
 	"cland.org/cland-chat-service/core/domain/entity"
+	repo "cland.org/cland-chat-service/core/domain/repository"
 	_ "github.com/mattn/go-sqlite3"
 )
 
 // Repository interfaces
-type MessageRepository interface {
-	CreateMessage(ctx context.Context, message *entity.Message) error
-	GetMessageByID(ctx context.Context, msgID string) (*entity.Message, error)
-	GetMessagesBySessionID(ctx context.Context, sessionID string) ([]*entity.Message, error)
-	UpdateMessageStatus(ctx context.Context, msgID string, status uint8) error
-}
-
-type SessionRepository interface {
-	CreateSession(ctx context.Context, session *entity.Session) error
-	GetSessionByID(ctx context.Context, id string) (*entity.Session, error)
-	UpdateSessionStatus(ctx context.Context, id string, status string) error
-	ListActiveSessions(ctx context.Context) ([]*entity.Session, error)
-}
-
-type UserRepository interface {
-	CreateUser(ctx context.Context, user *entity.User) error
-	GetUserByID(ctx context.Context, id string) (*entity.User, error)
-	UpdateUserStatus(ctx context.Context, id string, status string) error
-	ListAgentUsers(ctx context.Context) ([]*entity.User, error)
-}
 
 // Repository DTOs
 type MessageDTO struct {
@@ -77,6 +58,18 @@ type UserDTO struct {
 }
 
 type SQLiteRepository struct {
+	db *sql.DB
+}
+
+type SQLiteMessageRepository struct {
+	db *sql.DB
+}
+
+type SQLiteSessionRepository struct {
+	db *sql.DB
+}
+
+type SQLiteUserRepository struct {
 	db *sql.DB
 }
 
@@ -181,18 +174,23 @@ func toUserEntity(dto UserDTO) *entity.User {
 	}
 }
 
-func NewSQLiteRepository(dbPath string) (*SQLiteRepository, error) {
+func NewSQLiteRepository(dbPath string) (*SQLiteRepository, *SQLiteMessageRepository, *SQLiteSessionRepository, *SQLiteUserRepository, error) {
 	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, nil, err
 	}
 
 	// Verify connection
 	if err := db.Ping(); err != nil {
-		return nil, err
+		return nil, nil, nil, nil, err
 	}
 
-	return &SQLiteRepository{db: db}, nil
+	baseRepo := &SQLiteRepository{db: db}
+	return baseRepo,
+		&SQLiteMessageRepository{db: db},
+		&SQLiteSessionRepository{db: db},
+		&SQLiteUserRepository{db: db},
+		nil
 }
 
 func (r *SQLiteRepository) Close() error {
@@ -201,13 +199,13 @@ func (r *SQLiteRepository) Close() error {
 
 // Interface implementation checks
 var (
-	_ MessageRepository = (*SQLiteRepository)(nil)
-	_ SessionRepository = (*SQLiteRepository)(nil)
-	_ UserRepository    = (*SQLiteRepository)(nil)
+	_ repo.MessageRepository = (*SQLiteMessageRepository)(nil)
+	_ repo.SessionRepository = (*SQLiteSessionRepository)(nil)
+	_ repo.UserRepository    = (*SQLiteUserRepository)(nil)
 )
 
 // MessageRepository implementation
-func (r *SQLiteRepository) CreateMessage(ctx context.Context, message *entity.Message) error {
+func (r *SQLiteMessageRepository) Create(ctx context.Context, message *entity.Message) error {
 	query := `INSERT INTO t_chat_message 
 		(msg_id, session_id, msg_type, src, dst, content, content_type, ts, status, ext, created_by, updated_by)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
@@ -230,7 +228,7 @@ func (r *SQLiteRepository) CreateMessage(ctx context.Context, message *entity.Me
 	return err
 }
 
-func (r *SQLiteRepository) GetMessageByID(ctx context.Context, msgID string) (*entity.Message, error) {
+func (r *SQLiteMessageRepository) GetByID(ctx context.Context, msgID string) (*entity.Message, error) {
 	query := `SELECT 
 		msg_id, session_id, msg_type, src, dst, content, content_type, ts, status, ext, 
 		created_by, updated_by, created_at, updated_at
@@ -263,7 +261,7 @@ func (r *SQLiteRepository) GetMessageByID(ctx context.Context, msgID string) (*e
 	return toMessageEntity(dto), nil
 }
 
-func (r *SQLiteRepository) GetMessagesBySessionID(ctx context.Context, sessionID string) ([]*entity.Message, error) {
+func (r *SQLiteMessageRepository) GetBySessionID(ctx context.Context, sessionID string) ([]*entity.Message, error) {
 	query := `SELECT 
 		msg_id, session_id, msg_type, src, dst, content, content_type, ts, status, ext, 
 		created_by, updated_by, created_at, updated_at
@@ -303,7 +301,7 @@ func (r *SQLiteRepository) GetMessagesBySessionID(ctx context.Context, sessionID
 	return messages, nil
 }
 
-func (r *SQLiteRepository) UpdateMessageStatus(ctx context.Context, msgID string, status uint8) error {
+func (r *SQLiteMessageRepository) UpdateStatus(ctx context.Context, msgID string, status uint8) error {
 	query := `UPDATE t_chat_message 
 		SET status = ?, updated_at = CURRENT_TIMESTAMP 
 		WHERE msg_id = ?`
@@ -312,7 +310,7 @@ func (r *SQLiteRepository) UpdateMessageStatus(ctx context.Context, msgID string
 	return err
 }
 
-func (r *SQLiteRepository) CreateSession(ctx context.Context, session *entity.Session) error {
+func (r *SQLiteSessionRepository) Create(ctx context.Context, session *entity.Session) error {
 	query := `INSERT INTO t_session 
 		(session_id, cid, start_time, end_time, status, created_by, updated_by)
 		VALUES (?, ?, ?, ?, ?, ?, ?)`
@@ -330,7 +328,7 @@ func (r *SQLiteRepository) CreateSession(ctx context.Context, session *entity.Se
 	return err
 }
 
-func (r *SQLiteRepository) GetSessionByID(ctx context.Context, id string) (*entity.Session, error) {
+func (r *SQLiteSessionRepository) GetByID(ctx context.Context, id string) (*entity.Session, error) {
 	query := `SELECT 
 		session_id, cid, start_time, end_time, status, 
 		created_by, updated_by, created_at, updated_at
@@ -358,7 +356,7 @@ func (r *SQLiteRepository) GetSessionByID(ctx context.Context, id string) (*enti
 	return toSessionEntity(dto), nil
 }
 
-func (r *SQLiteRepository) UpdateSessionStatus(ctx context.Context, id string, status string) error {
+func (r *SQLiteSessionRepository) UpdateStatus(ctx context.Context, id string, status string) error {
 	query := `UPDATE t_session 
 		SET status = ?, updated_at = CURRENT_TIMESTAMP 
 		WHERE session_id = ?`
@@ -367,7 +365,7 @@ func (r *SQLiteRepository) UpdateSessionStatus(ctx context.Context, id string, s
 	return err
 }
 
-func (r *SQLiteRepository) ListActiveSessions(ctx context.Context) ([]*entity.Session, error) {
+func (r *SQLiteSessionRepository) ListActive(ctx context.Context) ([]*entity.Session, error) {
 	query := `SELECT 
 		session_id, cid, start_time, end_time, status, 
 		created_by, updated_by, created_at, updated_at
@@ -401,7 +399,7 @@ func (r *SQLiteRepository) ListActiveSessions(ctx context.Context) ([]*entity.Se
 	return sessions, nil
 }
 
-func (r *SQLiteRepository) CreateUser(ctx context.Context, user *entity.User) error {
+func (r *SQLiteUserRepository) Create(ctx context.Context, user *entity.User) error {
 	query := `INSERT INTO t_user 
 		(cid, uid, query, created_by, updated_by)
 		VALUES (?, ?, ?, ?, ?)`
@@ -417,7 +415,7 @@ func (r *SQLiteRepository) CreateUser(ctx context.Context, user *entity.User) er
 	return err
 }
 
-func (r *SQLiteRepository) GetUserByID(ctx context.Context, id string) (*entity.User, error) {
+func (r *SQLiteUserRepository) GetByID(ctx context.Context, id string) (*entity.User, error) {
 	query := `SELECT 
 		cid, uid, query, 
 		created_by, updated_by, created_at, updated_at
@@ -443,7 +441,7 @@ func (r *SQLiteRepository) GetUserByID(ctx context.Context, id string) (*entity.
 	return toUserEntity(dto), nil
 }
 
-func (r *SQLiteRepository) UpdateUserStatus(ctx context.Context, id string, status string) error {
+func (r *SQLiteUserRepository) UpdateStatus(ctx context.Context, id string, status string) error {
 	query := `UPDATE t_user 
 		SET status = ?, updated_at = CURRENT_TIMESTAMP 
 		WHERE cid = ?`
@@ -452,7 +450,7 @@ func (r *SQLiteRepository) UpdateUserStatus(ctx context.Context, id string, stat
 	return err
 }
 
-func (r *SQLiteRepository) ListAgentUsers(ctx context.Context) ([]*entity.User, error) {
+func (r *SQLiteUserRepository) ListAgents(ctx context.Context) ([]*entity.User, error) {
 	// Note: This implementation assumes agents are identified by a role field
 	// which isn't in the current schema. Would need schema modification.
 	return nil, errors.New("not implemented - requires schema changes")

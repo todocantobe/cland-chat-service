@@ -3,7 +3,11 @@
 all: build
 
 build:
-	@go build -v .
+	set CGO_ENABLED=1 && go build -v .
+
+# Debug build
+build-debug:
+	set CGO_ENABLED=1 && go build -v -gcflags="all=-N -l" -o cland-chat-service.debug.exe .
 
 tool:
 	go vet ./...; true

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"cland.org/cland-chat-service/core/infrastructure/delivery/websocket/sockio"
 	"context"
 	"fmt"
 	"net/http"
@@ -10,6 +9,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"cland.org/cland-chat-service/core/infrastructure/delivery/websocket/sockio"
 
 	"cland.org/cland-chat-service/core/usecase"
 	"go.uber.org/zap"
@@ -37,13 +38,14 @@ func main() {
 	}
 
 	// Initialize repositories
-	msgRepo := repository.NewMemoryMessageRepository()
-	sessionRepo := repository.NewMemorySessionRepository()
-	userRepo := repository.NewMemoryUserRepository()
+	_, messageRepo, sessionRepo, userRepo, err := repository.NewSQLiteRepository("E:/data/cland_chat.db")
+	if err != nil {
+		zapLogger.Fatal("Failed to initialize SQLite repository", zap.Error(err))
+	}
 
 	// Initialize use cases
 	chatUseCase := usecase.NewChatUseCase(
-		msgRepo,     // messageRepo
+		messageRepo, // messageRepo
 		sessionRepo, // sessionRepo
 		userRepo,    // userRepo
 	)
