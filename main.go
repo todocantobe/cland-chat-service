@@ -12,7 +12,7 @@ import (
 
 	"cland.org/cland-chat-service/core/infrastructure/delivery/websocket/sockio"
 
-	"cland.org/cland-chat-service/core/usecase"
+	"cland.org/cland-chat-service/core/application"
 	"go.uber.org/zap"
 
 	"cland.org/cland-chat-service/core/infrastructure/config"
@@ -43,20 +43,20 @@ func main() {
 		zapLogger.Fatal("Failed to initialize SQLite repository", zap.Error(err))
 	}
 
-	// Initialize use cases
-	chatUseCase := usecase.NewChatUseCase(
+	// Initialize application services
+	chatService := application.NewChatService(
 		messageRepo, // messageRepo
 		sessionRepo, // sessionRepo
 		userRepo,    // userRepo
 	)
 
 	// Initialize HTTP router
-	httpRouter := cland_http.GetRouter(chatUseCase)
+	httpRouter := cland_http.GetRouter(chatService)
 	httpRouter.Use(logger.GinRecovery(zapLogger, true))
 	httpRouter.Use(logger.GinLogger(zapLogger))
 
 	// Initialize WebSocket server
-	go sockio.InitWsServer(zapLogger, chatUseCase)
+	go sockio.InitWsServer(zapLogger, chatService)
 
 	// Create HTTP server
 	httpServer := &http.Server{

@@ -11,12 +11,12 @@ import (
 	"cland.org/cland-chat-service/core/domain/entity"
 	"cland.org/cland-chat-service/core/infrastructure/delivery/websocket/connection"
 	"cland.org/cland-chat-service/core/infrastructure/delivery/websocket/dto"
-	"cland.org/cland-chat-service/core/usecase"
+	"cland.org/cland-chat-service/core/application"
 	"github.com/gorilla/websocket"
 )
 
 type Handler struct {
-	ChatUseCase       *usecase.ChatUseCase
+	ChatService       *application.ChatService
 	ConnectionManager *connection.Manager
 	MessageSender     dto.MessageSender
 	connections       sync.Map // map[string]*websocket.Conn
@@ -58,12 +58,12 @@ func (h *Handler) processMessage(conn *websocket.Conn, msg entity.Message) error
 
 	switch msg.MsgType {
 	case entity.MsgTypeMessage, entity.MsgTypeNotification:
-		if err := h.ChatUseCase.SendMessage(ctx, &msg); err != nil {
+		if err := h.ChatService.SendMessage(ctx, &msg); err != nil {
 			return err
 		}
 		return h.pushMessage(msg)
 	case entity.MsgTypeAck:
-		return h.ChatUseCase.ProcessMessageStatus(ctx, msg.MsgID, entity.StatusRead)
+		return h.ChatService.ProcessMessageStatus(ctx, msg.MsgID, entity.StatusRead)
 	default:
 		return errors.New("unsupported message type")
 	}
@@ -92,7 +92,7 @@ func (h *Handler) pushMessage(msg entity.Message) error {
 	}
 
 	// 接收方离线，更新为离线状态
-	return h.ChatUseCase.ProcessMessageStatus(context.Background(), msg.MsgID, entity.StatusOffline)
+	return h.ChatService.ProcessMessageStatus(context.Background(), msg.MsgID, entity.StatusOffline)
 }
 
 // sendError 发送错误消息

@@ -10,7 +10,7 @@ import (
 
 	"cland.org/cland-chat-service/core/infrastructure/delivery/websocket/connection"
 	"cland.org/cland-chat-service/core/infrastructure/delivery/websocket/handler"
-	"cland.org/cland-chat-service/core/usecase"
+	"cland.org/cland-chat-service/core/application"
 	"github.com/gorilla/websocket"
 	"go.uber.org/zap"
 )
@@ -21,19 +21,19 @@ func init() {
 
 // WsServer 封装 WebSocket 服务器
 type WsServer struct {
-	logger      *zap.Logger
-	chatUseCase *usecase.ChatUseCase
-	upgrader    websocket.Upgrader
-	protocol    *EngineIOProtocol
-	connManager *connection.Manager
-	once        sync.Once
+	logger       *zap.Logger
+	chatService  *application.ChatService
+	upgrader     websocket.Upgrader
+	protocol     *EngineIOProtocol
+	connManager  *connection.Manager
+	once         sync.Once
 }
 
 // NewWsServer creates a new WebSocket server
-func NewWsServer(logger *zap.Logger, chatUseCase *usecase.ChatUseCase) *WsServer {
+func NewWsServer(logger *zap.Logger, chatService *application.ChatService) *WsServer {
 	return &WsServer{
 		logger:      logger,
-		chatUseCase: chatUseCase,
+		chatService: chatService,
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
@@ -46,8 +46,8 @@ func NewWsServer(logger *zap.Logger, chatUseCase *usecase.ChatUseCase) *WsServer
 }
 
 // InitWsServer 初始化 WebSocket 服务器
-func InitWsServer(logger *zap.Logger, chatUseCase *usecase.ChatUseCase) *WsServer {
-	server := NewWsServer(logger, chatUseCase)
+func InitWsServer(logger *zap.Logger, chatService *application.ChatService) *WsServer {
+	server := NewWsServer(logger, chatService)
 	server.init()
 	return server
 }
@@ -173,7 +173,7 @@ func (s *WsServer) handle0(conn *websocket.Conn, clandCID string) {
 	// Create WebSocket handler
 	messageSender := NewSocketIOMessageSender(s.protocol, s.logger)
 	wsHandler := &handler.Handler{
-		ChatUseCase:       s.chatUseCase,
+		ChatService:       s.chatService,
 		ConnectionManager: s.connManager,
 		MessageSender:     messageSender,
 	}

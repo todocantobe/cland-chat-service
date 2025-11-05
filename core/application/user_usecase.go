@@ -1,4 +1,4 @@
-package usecase
+package application
 
 import (
 	"context"
@@ -9,16 +9,16 @@ import (
 	"cland.org/cland-chat-service/core/domain/repository"
 )
 
-type UserUseCase struct {
+type UserService struct {
 	userRepo    repository.UserRepository
 	sessionRepo repository.SessionRepository
 }
 
-func NewUserUseCase(
+func NewUserService(
 	userRepo repository.UserRepository,
 	sessionRepo repository.SessionRepository,
-) *UserUseCase {
-	return &UserUseCase{
+) *UserService {
+	return &UserService{
 		userRepo:    userRepo,
 		sessionRepo: sessionRepo,
 	}
@@ -31,7 +31,7 @@ type InitUserResponse struct {
 	ClandCID     string
 }
 
-func (uc *UserUseCase) InitUser(ctx context.Context, existingCID string) (*InitUserResponse, error) {
+func (uc *UserService) InitUser(ctx context.Context, existingCID string) (*InitUserResponse, error) {
 	// Generate or validate CID
 	var clandCID string
 	if utils.IsValidClandCID(existingCID) {

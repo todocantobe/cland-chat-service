@@ -10,7 +10,10 @@ cland-chat-service/
 │   ├── domain/           # 领域层
 │   │   ├── entity/       # 领域实体
 │   │   └── repository/   # 仓储接口
-│   ├── usecase/          # 用例层(业务逻辑)
+│   ├── application/      # 应用层(业务逻辑)
+│   ├── adapter/          # 适配器层
+│   │   ├── input/        # 输入适配器(控制器)
+│   │   └── output/       # 输出适配器(仓储适配器)
 │   └── infrastructure/   # 基础设施层
 │       ├── delivery/     # 交付层(HTTP/WebSocket)
 │       └── repository/   # 仓储实现(Memory/SQLite)
@@ -20,8 +23,6 @@ cland-chat-service/
 │   └── utils/            # 工具函数
 ├── conf/                 # 配置文件
 ├── docs/                 # 文档
-├── http/                 # HTTP测试脚本
-├── sql/                  # SQL初始化脚本
 ├── main.go               # 程序入口
 └── go.mod                # Go模块文件
 ```
@@ -35,28 +36,35 @@ cland-chat-service/
    - 包含业务规则和领域逻辑
    - 示例: `core/domain/entity/chat.go`, `core/domain/repository/chat_repository.go`
 
-2. **用例层(UseCase)**
-   - 实现具体业务逻辑
+2. **应用层(Application)**
+   - 实现具体业务逻辑(原用例层)
    - 协调领域对象和仓储
-   - 示例: `core/usecase/chat_usecase.go`
+   - 示例: `core/application/chat_service.go`, `core/application/user_service.go`
 
-3. **基础设施层(Infrastructure)**
+3. **适配器层(Adapter)**
+   - **输入适配器**: 处理外部输入(HTTP请求、WebSocket消息)
+   - **输出适配器**: 处理外部输出(数据库、外部服务)
+   - 示例: `core/adapter/input/chat_controller.go`, `core/adapter/output/repository_adapter.go`
+
+4. **基础设施层(Infrastructure)**
    - 实现仓储接口(SQLite/Memory)
    - 处理外部交互(HTTP/WebSocket)
    - 示例: `core/infrastructure/repository/sqlite_repository.go`
 
-4. **交付层(Delivery)**
-   - 处理外部请求和响应
-   - 转换DTO和领域对象
-   - 示例: `core/infrastructure/delivery/http/handler/chat_handler.go`
-
 ### 依赖关系
 
 ```
-Delivery → UseCase → Domain
-            ↑
-Infrastructure → Domain
+Input Adapter → Application → Domain ← Output Adapter
+                              ↑
+                      Infrastructure
 ```
+
+### 架构优势
+
+- **清晰的依赖方向**: 依赖从外层指向内层
+- **可测试性**: 各层可独立测试
+- **可替换性**: 基础设施和适配器可轻松替换
+- **业务逻辑隔离**: 核心业务逻辑不依赖外部框架
 
 ## 核心功能
 
@@ -65,6 +73,7 @@ Infrastructure → Domain
 - 消息存储(SQLite/Memory)
 - 客服分配
 - REST API接口
+- 适配器模式支持
 
 ## 技术栈
 

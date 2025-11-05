@@ -6,7 +6,7 @@ import (
 
 	"cland.org/cland-chat-service/core/domain/entity"
 	"cland.org/cland-chat-service/core/infrastructure/delivery/http/response"
-	"cland.org/cland-chat-service/core/usecase"
+	"cland.org/cland-chat-service/core/application"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
@@ -32,11 +32,11 @@ type MessageResponse struct {
 }
 
 type MessageHandler struct {
-	chatUC *usecase.ChatUseCase
+	chatService *application.ChatService
 }
 
-func NewMessageHandler(chatUC *usecase.ChatUseCase) *MessageHandler {
-	return &MessageHandler{chatUC: chatUC}
+func NewMessageHandler(chatService *application.ChatService) *MessageHandler {
+	return &MessageHandler{chatService: chatService}
 }
 
 // GetOfflineMessages retrieves offline messages for a user
@@ -62,7 +62,7 @@ func (h *MessageHandler) GetOfflineMessages(c *gin.Context) {
 
 	ctx := c.Request.Context()
 
-	messages, err := h.chatUC.GetOfflineMessages(ctx, userID)
+	messages, err := h.chatService.GetOfflineMessages(ctx, userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, response.Response{
 			Code: http.StatusInternalServerError,
@@ -125,7 +125,7 @@ func (h *MessageHandler) SendChatMessage(c *gin.Context) {
 		},
 	}
 
-	if err := h.chatUC.SendMessage(ctx, message); err != nil {
+	if err := h.chatService.SendMessage(ctx, message); err != nil {
 		c.JSON(http.StatusInternalServerError, response.Response{
 			Code: http.StatusInternalServerError,
 			Msg:  "failed to send message",

@@ -6,7 +6,7 @@ import (
 	"cland.org/cland-chat-service/common/constants"
 	"cland.org/cland-chat-service/core/domain/repository"
 	"cland.org/cland-chat-service/core/infrastructure/delivery/http/response"
-	"cland.org/cland-chat-service/core/usecase"
+	"cland.org/cland-chat-service/core/application"
 	"github.com/gin-gonic/gin"
 )
 
@@ -20,18 +20,18 @@ type UserResponse struct {
 type UserHandler struct {
 	userRepo    repository.UserRepository
 	sessionRepo repository.SessionRepository
-	userUC      *usecase.UserUseCase
+	userService *application.UserService
 }
 
 func NewUserHandler(
 	userRepo repository.UserRepository,
 	sessionRepo repository.SessionRepository,
-	userUC *usecase.UserUseCase,
+	userService *application.UserService,
 ) *UserHandler {
 	return &UserHandler{
 		userRepo:    userRepo,
 		sessionRepo: sessionRepo,
-		userUC:      userUC,
+		userService: userService,
 	}
 }
 
@@ -53,8 +53,8 @@ func (h *UserHandler) InitUser(c *gin.Context) {
 		existingCID = cid
 	}
 
-	// Call usecase
-	res, err := h.userUC.InitUser(ctx, existingCID)
+	// Call application service
+	res, err := h.userService.InitUser(ctx, existingCID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, response.Response{
 			Code: constants.ErrorCodeUserInitFailed,

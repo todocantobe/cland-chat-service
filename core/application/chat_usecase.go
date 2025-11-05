@@ -1,4 +1,4 @@
-package usecase
+package application
 
 import (
 	"context"
@@ -9,20 +9,20 @@ import (
 	"cland.org/cland-chat-service/core/domain/repository"
 )
 
-// ChatUseCase 聊天用例
-type ChatUseCase struct {
+// ChatService 聊天服务
+type ChatService struct {
 	messageRepo repository.MessageRepository
 	SessionRepo repository.SessionRepository
 	UserRepo    repository.UserRepository
 }
 
-// NewChatUseCase 创建聊天用例
-func NewChatUseCase(
+// NewChatService 创建聊天服务
+func NewChatService(
 	messageRepo repository.MessageRepository,
 	sessionRepo repository.SessionRepository,
 	userRepo repository.UserRepository,
-) *ChatUseCase {
-	return &ChatUseCase{
+) *ChatService {
+	return &ChatService{
 		messageRepo: messageRepo,
 		SessionRepo: sessionRepo,
 		UserRepo:    userRepo,
@@ -30,7 +30,7 @@ func NewChatUseCase(
 }
 
 // SendMessage 发送消息
-func (uc *ChatUseCase) SendMessage(ctx context.Context, message *entity.Message) error {
+func (uc *ChatService) SendMessage(ctx context.Context, message *entity.Message) error {
 	// 初始化消息时间戳
 	if message.Ts == 0 {
 		message.Ts = entity.StringTimestamp(time.Now().UnixNano() / int64(time.Millisecond))
@@ -50,7 +50,7 @@ func (uc *ChatUseCase) SendMessage(ctx context.Context, message *entity.Message)
 }
 
 // handleChatMessage 处理普通聊天消息
-func (uc *ChatUseCase) handleChatMessage(ctx context.Context, message *entity.Message) error {
+func (uc *ChatService) handleChatMessage(ctx context.Context, message *entity.Message) error {
 	// 设置初始状态
 	message.Status = entity.StatusNew
 
@@ -65,7 +65,7 @@ func (uc *ChatUseCase) handleChatMessage(ctx context.Context, message *entity.Me
 }
 
 // handleNotification 处理通知消息
-func (uc *ChatUseCase) handleNotification(ctx context.Context, message *entity.Message) error {
+func (uc *ChatService) handleNotification(ctx context.Context, message *entity.Message) error {
 	// 初始化消息不需要会话检查
 	if message.Content == "init" {
 		message.Status = entity.StatusNew
@@ -83,7 +83,7 @@ func (uc *ChatUseCase) handleNotification(ctx context.Context, message *entity.M
 }
 
 // handleAck 处理确认消息
-func (uc *ChatUseCase) handleAck(ctx context.Context, message *entity.Message) error {
+func (uc *ChatService) handleAck(ctx context.Context, message *entity.Message) error {
 	// 获取原始消息
 	original, err := uc.messageRepo.GetByID(ctx, message.MsgID)
 	if err != nil {
@@ -105,7 +105,7 @@ func (uc *ChatUseCase) handleAck(ctx context.Context, message *entity.Message) e
 }
 
 // GetSessionMessages 获取会话消息
-func (uc *ChatUseCase) GetSessionMessages(ctx context.Context, sessionID string) ([]*entity.Message, error) {
+func (uc *ChatService) GetSessionMessages(ctx context.Context, sessionID string) ([]*entity.Message, error) {
 	messages, err := uc.messageRepo.GetBySessionID(ctx, sessionID)
 	if err != nil {
 		return nil, err
@@ -124,7 +124,7 @@ func (uc *ChatUseCase) GetSessionMessages(ctx context.Context, sessionID string)
 }
 
 // CreateSession 创建会话
-func (uc *ChatUseCase) CreateSession(ctx context.Context, userID string) (*entity.Session, error) {
+func (uc *ChatService) CreateSession(ctx context.Context, userID string) (*entity.Session, error) {
 	// 获取可用客服
 	agents, err := uc.UserRepo.ListAgents(ctx)
 	if err != nil {
@@ -151,12 +151,12 @@ func (uc *ChatUseCase) CreateSession(ctx context.Context, userID string) (*entit
 }
 
 // CloseSession 关闭会话
-func (uc *ChatUseCase) CloseSession(ctx context.Context, sessionID string) error {
+func (uc *ChatService) CloseSession(ctx context.Context, sessionID string) error {
 	return uc.SessionRepo.UpdateStatus(ctx, sessionID, "closed")
 }
 
 // GetOfflineMessages 获取离线消息并更新状态
-func (uc *ChatUseCase) GetOfflineMessages(ctx context.Context, userID string) ([]*entity.Message, error) {
+func (uc *ChatService) GetOfflineMessages(ctx context.Context, userID string) ([]*entity.Message, error) {
 	// Get all messages for user
 	allMessages, err := uc.GetSessionMessages(ctx, userID)
 	if err != nil {
@@ -177,7 +177,7 @@ func (uc *ChatUseCase) GetOfflineMessages(ctx context.Context, userID string) ([
 }
 
 // ProcessMessageStatus 处理消息状态更新
-func (uc *ChatUseCase) ProcessMessageStatus(ctx context.Context, msgID string, newStatus uint8) error {
+func (uc *ChatService) ProcessMessageStatus(ctx context.Context, msgID string, newStatus uint8) error {
 	// 获取消息
 	message, err := uc.messageRepo.GetByID(ctx, msgID)
 	if err != nil {

@@ -5,7 +5,7 @@ import (
 	"sync"
 
 	"cland.org/cland-chat-service/core/infrastructure/delivery/http/handler"
-	"cland.org/cland-chat-service/core/usecase"
+	"cland.org/cland-chat-service/core/application"
 	_ "cland.org/cland-chat-service/docs/swagger"
 	"github.com/gin-gonic/gin"
 	swaggerFiles "github.com/swaggo/files"
@@ -17,15 +17,15 @@ var (
 	router *gin.Engine
 )
 
-func GetRouter(chatUseCase *usecase.ChatUseCase) *gin.Engine {
+func GetRouter(chatService *application.ChatService) *gin.Engine {
 	once.Do(func() {
 		router = gin.Default()
-		setupRoutes(router, chatUseCase)
+		setupRoutes(router, chatService)
 	})
 	return router
 }
 
-func setupRoutes(r *gin.Engine, chatUseCase *usecase.ChatUseCase) {
+func setupRoutes(r *gin.Engine, chatService *application.ChatService) {
 	// Swagger route
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
@@ -53,19 +53,19 @@ func setupRoutes(r *gin.Engine, chatUseCase *usecase.ChatUseCase) {
 		})
 
 		// User initialization
-		userUC := usecase.NewUserUseCase(
-			chatUseCase.UserRepo,
-			chatUseCase.SessionRepo,
+		userService := application.NewUserService(
+			chatService.UserRepo,
+			chatService.SessionRepo,
 		)
 		userHandler := handler.NewUserHandler(
-			chatUseCase.UserRepo,
-			chatUseCase.SessionRepo,
-			userUC,
+			chatService.UserRepo,
+			chatService.SessionRepo,
+			userService,
 		)
 		api.POST("/init", userHandler.InitUser)
 
 		// 离线消息
-		msgHandler := handler.NewMessageHandler(chatUseCase)
+		msgHandler := handler.NewMessageHandler(chatService)
 		api.GET("/messages/offline", msgHandler.GetOfflineMessages)
 	}
 }
