@@ -8,3 +8,5 @@ runtime/*
 /vendor/
 /vendor/*
 /cland-chat-service.debug.exe
+.vscode
+cland-chat-service.exe
