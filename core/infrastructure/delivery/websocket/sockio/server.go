@@ -55,14 +55,21 @@ func InitWsServer(logger *zap.Logger, chatService *application.ChatService) *WsS
 // init 初始化 WebSocket 配置
 func (s *WsServer) init() {
 	s.once.Do(func() {
-		s.setupWebSocket()
+		// 创建连接管理器
+		s.connManager = connection.NewManager(s.logger)
 	})
+}
+
+// SetupRoutes 设置 WebSocket 路由
+func (s *WsServer) SetupRoutes(router interface{}) {
+	// For separate WebSocket server on port 8081, we don't need to integrate with Gin
+	s.setupWebSocket()
 }
 
 // setupWebSocket 配置 Socket.IO 事件
 func (s *WsServer) setupWebSocket() {
 	log := s.logger.Named("websocket")
-	log.Info("Setting up WebSocket server")
+	log.Info("Setting up WebSocket server on port 8081")
 	defer func() {
 		if r := recover(); r != nil {
 			log.Error("Recovered from panic in setupWebSocket", zap.Any("error", r))
@@ -82,7 +89,7 @@ func (s *WsServer) setupWebSocket() {
 
 		// Handle polling transport
 		if r.Method == "GET" && r.URL.Query().Get("transport") == "polling" {
-			sid := generateSessionID() // Implement this function
+			sid := generateSessionID()
 			if err := s.protocol.SendHandshake(w, sid); err != nil {
 				log.Error("Failed to send handshake", zap.Error(err))
 				w.WriteHeader(http.StatusInternalServerError)
@@ -129,11 +136,10 @@ func (s *WsServer) setupWebSocket() {
 		w.WriteHeader(http.StatusBadRequest)
 	})
 
-	http.Handle("/", http.FileServer(http.Dir("./asset")))
-	s.logger.Info("Serving at localhost:8081...")
+	log.Info("Starting WebSocket server on :8081...")
 	err := http.ListenAndServe(":8081", nil)
 	if err != nil {
-		s.logger.Error("ws ListenAndServe", zap.Error(err))
+		log.Error("WebSocket server failed to start", zap.Error(err))
 	}
 }
 

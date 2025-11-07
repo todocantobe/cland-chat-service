@@ -56,7 +56,7 @@ func main() {
 	httpRouter.Use(logger.GinLogger(zapLogger))
 
 	// Initialize WebSocket server
-	go sockio.InitWsServer(zapLogger, chatService)
+	wsServer := sockio.InitWsServer(zapLogger, chatService)
 
 	// Create HTTP server
 	httpServer := &http.Server{
@@ -65,9 +65,9 @@ func main() {
 	}
 
 	var wg sync.WaitGroup
-	wg.Add(1)
+	wg.Add(2)
 
-	// Start HTTP server (which now includes WebSocket)
+	// Start HTTP server
 	go func() {
 		defer wg.Done()
 		zapLogger.Info("Starting HTTP server",
@@ -75,6 +75,12 @@ func main() {
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			zapLogger.Fatal("Failed to start HTTP server", zap.Error(err))
 		}
+	}()
+
+	// Start WebSocket server on port 8081
+	go func() {
+		defer wg.Done()
+		wsServer.SetupRoutes(httpRouter)
 	}()
 
 	// Graceful shutdown
