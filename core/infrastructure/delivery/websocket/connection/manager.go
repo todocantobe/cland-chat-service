@@ -63,6 +63,19 @@ func (m *Manager) UpdateLastActive(userID string) {
 	m.mu.Unlock()
 }
 
+// IsConnectionTimeout 检查指定连接是否超时
+func (m *Manager) IsConnectionTimeout(userID string, timeout time.Duration) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	lastActive, exists := m.lastActive[userID]
+	if !exists {
+		return true // 连接不存在，视为超时
+	}
+
+	return time.Since(lastActive) > timeout
+}
+
 // CheckTimeoutConnections 检查超时连接并关闭
 func (m *Manager) CheckTimeoutConnections(timeout time.Duration) []string {
 	var timedOut []string
