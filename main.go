@@ -38,7 +38,7 @@ func main() {
 	}
 
 	// Initialize repositories
-	_, messageRepo, sessionRepo, userRepo, err := repository.NewSQLiteRepository("E:/data/cland_chat.db")
+	_, messageRepo, sessionRepo, userRepo, err := repository.NewSQLiteRepository("E:/db/RDB/sqlite/cland_chat.db")
 	if err != nil {
 		zapLogger.Fatal("Failed to initialize SQLite repository", zap.Error(err))
 	}

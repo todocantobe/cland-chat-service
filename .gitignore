@@ -10,3 +10,6 @@ runtime/*
 /cland-chat-service.debug.exe
 .vscode
 cland-chat-service.exe
+docs/ws/node_modules
+__debug_bin.exe
+__debug_bin.exe3679950488

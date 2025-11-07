@@ -8,9 +8,9 @@ import (
 	"sync"
 	"time"
 
+	"cland.org/cland-chat-service/core/application"
 	"cland.org/cland-chat-service/core/infrastructure/delivery/websocket/connection"
 	"cland.org/cland-chat-service/core/infrastructure/delivery/websocket/handler"
-	"cland.org/cland-chat-service/core/application"
 	"github.com/gorilla/websocket"
 	"go.uber.org/zap"
 )
@@ -21,12 +21,12 @@ func init() {
 
 // WsServer 封装 WebSocket 服务器
 type WsServer struct {
-	logger       *zap.Logger
-	chatService  *application.ChatService
-	upgrader     websocket.Upgrader
-	protocol     *EngineIOProtocol
-	connManager  *connection.Manager
-	once         sync.Once
+	logger      *zap.Logger
+	chatService *application.ChatService
+	upgrader    websocket.Upgrader
+	protocol    *EngineIOProtocol
+	connManager *connection.Manager
+	once        sync.Once
 }
 
 // NewWsServer creates a new WebSocket server
@@ -99,8 +99,16 @@ func (s *WsServer) setupWebSocket() {
 				return
 			}
 
+			// Handle connection first to get clandCid
+			clandCid, err := s.handleConnection(conn, r)
+			if err != nil {
+				log.Error("Failed to handle connection", zap.Error(err))
+				conn.Close()
+				return
+			}
+
 			// Send handshake ack
-			sid := generateSessionID() // Implement this function
+			sid := generateSessionID()
 			if err := s.protocol.SendPacket(conn, PacketTypeOpen, map[string]interface{}{
 				"sid":          sid,
 				"upgrades":     []string{"websocket"},
@@ -112,14 +120,8 @@ func (s *WsServer) setupWebSocket() {
 				return
 			}
 
-			// Handle connection
-			if clandCid, err := s.handleConnection(conn, r); err != nil {
-				log.Error("Failed to send handshake ack", zap.Error(err))
-				conn.Close()
-				return
-			} else {
-				s.handle0(conn, clandCid)
-			}
+			// Handle the connection
+			s.handle0(conn, clandCid)
 			return
 		}
 
