@@ -17,6 +17,7 @@ CREATE INDEX idx_t_user_created_at ON t_user(created_at);
 CREATE TABLE t_session (
     session_id VARCHAR(50) NOT NULL,
     cid VARCHAR(50) NOT NULL,
+    query TEXT,
     start_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     end_time DATETIME,
     status INTEGER NOT NULL DEFAULT 1,

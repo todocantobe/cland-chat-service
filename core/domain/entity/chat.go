@@ -116,7 +116,6 @@ type User struct {
 	ID         string    `json:"id"`
 	UID        string    `json:"uid"` // Unique user ID
 	Username   string    `json:"username"`
-	Query      string    `json:"query"`
 	Role       string    `json:"role"`   // customer, agent, admin
 	Status     string    `json:"status"` // online, offline, busy
 	CreatedBy  string    `json:"createdBy"`

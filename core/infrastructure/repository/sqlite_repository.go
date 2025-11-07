@@ -149,7 +149,6 @@ func toUserDTO(user *entity.User) UserDTO {
 		ID:        user.ID,
 		UID:       user.UID,
 		Username:  user.Username,
-		Query:     user.Query,
 		Role:      user.Role,
 		Status:    user.Status,
 		CreatedBy: user.CreatedBy,
@@ -164,7 +163,6 @@ func toUserEntity(dto UserDTO) *entity.User {
 		ID:        dto.ID,
 		UID:       dto.UID,
 		Username:  dto.Username,
-		Query:     dto.Query,
 		Role:      dto.Role,
 		Status:    dto.Status,
 		CreatedBy: dto.CreatedBy,
@@ -401,14 +399,13 @@ func (r *SQLiteSessionRepository) ListActive(ctx context.Context) ([]*entity.Ses
 
 func (r *SQLiteUserRepository) Create(ctx context.Context, user *entity.User) error {
 	query := `INSERT INTO t_user 
-		(cid, uid, query, created_by, updated_by)
+		(cid, uid, created_by, updated_by)
 		VALUES (?, ?, ?, ?, ?)`
 
 	dto := toUserDTO(user)
 	_, err := r.db.ExecContext(ctx, query,
 		dto.ID,
 		dto.UID,
-		dto.Query,
 		dto.CreatedBy,
 		dto.UpdatedBy,
 	)
@@ -417,7 +414,7 @@ func (r *SQLiteUserRepository) Create(ctx context.Context, user *entity.User) er
 
 func (r *SQLiteUserRepository) GetByID(ctx context.Context, id string) (*entity.User, error) {
 	query := `SELECT 
-		cid, uid, query, 
+		cid, uid, 
 		created_by, updated_by, created_at, updated_at
 		FROM t_user WHERE cid = ? AND is_deleted = 0`
 
