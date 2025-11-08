@@ -96,15 +96,26 @@ func (p *EngineIOProtocol) SendHandshake(w http.ResponseWriter, sid string) erro
 	return err
 }
 
-// BuildSocketIOPacket constructs a Socket.IO protocol message
+// BuildSocketIOPacket constructs a Socket.IO protocol message according to v4 spec
 func (p *EngineIOProtocol) BuildSocketIOPacket(packetType string, namespace string, data interface{}) (string, error) {
 	var builder strings.Builder
 	builder.WriteString(packetType) // Socket.IO packet type
 
+	// Add binary attachments count (0 for now, as we don't support binary)
+	// Format: <packet type>[<# of binary attachments>-][<namespace>,][<acknowledgment id>][JSON-stringified payload]
+	
+	// Handle namespace according to spec
 	if namespace != "" && namespace != "/" {
 		builder.WriteString(namespace)
+		builder.WriteString(",")
+	} else if namespace == "/" {
+		// Default namespace, no namespace in packet
+	} else {
+		// No namespace specified, use default
+		// No namespace in packet for default
 	}
-	builder.WriteString(",")
+
+	// Handle data
 	switch v := data.(type) {
 	case string:
 		builder.WriteString(v)

@@ -96,6 +96,13 @@ func (p *ProtocolHandler) handleSocketIOPacket(conn *websocket.Conn, payload []b
 			zap.String("clandCID", clandCID))
 		return fmt.Errorf("client disconnected")
 
+	// 处理错误包
+	case sioType == SocketIOPacketConnectError:
+		p.logger.Warn("Received connect error from client", 
+			zap.String("namespace", namespace),
+			zap.String("clandCID", clandCID))
+		return fmt.Errorf("client reported connect error")
+
 	// 未知类型
 	default:
 		log.Warn("Unsupported Socket.IO packet type", 
@@ -160,7 +167,7 @@ func (p *ProtocolHandler) handleEventWithAck(conn *websocket.Conn, sioType strin
 		return err
 	}
 
-	// 构建 ACK 包
+	// 构建 ACK 包 - 根据标准协议，ACK 包格式为 [responseData]
 	var ackPacketType string
 	switch sioType {
 	case SocketIOPacketBinaryEvent, SocketIOPacketBinaryEventV4:
@@ -169,8 +176,9 @@ func (p *ProtocolHandler) handleEventWithAck(conn *websocket.Conn, sioType strin
 		ackPacketType = SocketIOPacketAckV4
 	}
 
-	ackPayload := []interface{}{ackID, response}
-	ackPacket, err := p.protocol.BuildSocketIOPacket(ackPacketType, namespace, ackPayload)
+	// 根据标准协议，ACK 包的数据格式是 [responseData]
+	// ACK ID 已经在包的开头编码了
+	ackPacket, err := p.protocol.BuildSocketIOPacket(ackPacketType, namespace, []interface{}{response})
 	if err != nil {
 		log.Error("Failed to build ack packet", zap.Error(err))
 		return err
