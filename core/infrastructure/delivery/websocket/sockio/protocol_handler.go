@@ -91,10 +91,7 @@ func (p *ProtocolHandler) handleSocketIOPacket(conn *websocket.Conn, payload []b
 
 	// 处理断开连接包
 	case sioType == SocketIOPacketDisconnect:
-		p.logger.Info("Client disconnected from namespace", 
-			zap.String("namespace", namespace),
-			zap.String("clandCID", clandCID))
-		return fmt.Errorf("client disconnected")
+		return p.handleDisconnect(conn, namespace, clandCID)
 
 	// 处理错误包
 	case sioType == SocketIOPacketConnectError:
@@ -192,6 +189,30 @@ func (p *ProtocolHandler) handleEventWithAck(conn *websocket.Conn, sioType strin
 	}
 	_ = conn.SetWriteDeadline(time.Time{})
 	return nil
+}
+
+// handleDisconnect 处理断开连接包
+func (p *ProtocolHandler) handleDisconnect(conn *websocket.Conn, namespace string, clandCID string) error {
+	p.logger.Info("Client disconnected from namespace", 
+		zap.String("namespace", namespace),
+		zap.String("clandCID", clandCID))
+	
+	// 发送断开连接确认（可选，根据 Socket.IO 协议）
+	// 在某些情况下，服务器可以发送断开连接确认
+	disconnectPacket, err := p.protocol.BuildSocketIOPacket(SocketIOPacketDisconnect, namespace, nil)
+	if err != nil {
+		p.logger.Error("Failed to build disconnect ack", zap.Error(err))
+		return err
+	}
+	
+	_ = conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
+	if err := p.protocol.SendPacket(conn, PacketTypeMessage, disconnectPacket); err != nil {
+		p.logger.Warn("Failed to send disconnect ack", zap.Error(err))
+		// 不返回错误，因为客户端已经断开连接
+	}
+	_ = conn.SetWriteDeadline(time.Time{})
+	
+	return fmt.Errorf("client disconnected")
 }
 
 // handleEventWithoutAck 处理不需要 ACK 的事件
