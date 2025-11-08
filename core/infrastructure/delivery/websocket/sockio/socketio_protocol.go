@@ -5,11 +5,23 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gorilla/websocket"
+)
+
+// Socket.IO v4 扩展常量（补充原有缺失的类型）
+const (
+	// 多位数字类型标识（Socket.IO v4 标准）
+	SocketIOPacketEventV4       = "42" // 文本事件包（最常用，对应客户端 emit）
+	SocketIOPacketBinaryEventV4 = "45" // 二进制事件包
+	SocketIOPacketAckV4         = "43" // 文本 ACK 包
+	SocketIOPacketBinaryAckV4   = "46" // 二进制 ACK 包
+
+	// 命名空间分隔符（明确常量，避免硬编码）
+	namespaceSeparator = ","
+	namespaceDefault   = "/"
 )
 
 // EngineIOProtocol implements Engine.IO v4 protocol
@@ -109,37 +121,52 @@ func (p *EngineIOProtocol) BuildSocketIOPacket(packetType string, namespace stri
 	return builder.String(), nil
 }
 
-// ParseSocketIOPacket parses a Socket.IO protocol message according to the v4 protocol
+// ParseSocketIOPacket 解析 Socket.IO v4 数据包（无魔法数，严格使用常量）
 func (p *EngineIOProtocol) ParseSocketIOPacket(data []byte) (packetType string, namespace string, payload []byte, ackID int, err error) {
-	if len(data) < 2 {
-		return "", "", nil, 0, fmt.Errorf("invalid Socket.IO packet length")
+	if len(data) == 0 {
+		return "", "", nil, 0, fmt.Errorf("invalid Socket.IO packet length: empty data")
 	}
 
-	packetType = string(data[0])
-	remaining := data[1:]
+	// 提取 PacketType（支持 1-2 位数字，Socket.IO v4 标准）
+	packetTypeEnd := 0
+	for packetTypeEnd < len(data) && data[packetTypeEnd] >= '0' && data[packetTypeEnd] <= '9' {
+		packetTypeEnd++
+	}
+	if packetTypeEnd == 0 {
+		return "", "", nil, 0, fmt.Errorf("invalid packet type: no numeric prefix")
+	}
+	packetType = string(data[:packetTypeEnd])
+	remaining := data[packetTypeEnd:]
 
-	// Parse namespace (optional)
-	namespace = "/"
+	// 解析命名空间（默认值：namespaceDefault）
+	namespace = namespaceDefault
 	if len(remaining) > 0 {
-		nsEnd := bytes.IndexByte(remaining, ',')
-		if nsEnd == -1 {
-			// No comma found, entire remaining is namespace
-			namespace = string(remaining)
-			remaining = nil
-		} else {
-			namespace = string(remaining[:nsEnd])
-			remaining = remaining[nsEnd+1:]
+		// 场景1：显式指定命名空间（以 "/" 开头）
+		if remaining[0] == '/' {
+			nsEnd := bytes.IndexByte(remaining, namespaceSeparator[0])
+			if nsEnd == -1 {
+				// 无分隔符，剩余部分全为命名空间
+				namespace = string(remaining)
+				remaining = nil
+			} else {
+				namespace = string(remaining[:nsEnd])
+				remaining = remaining[nsEnd+1:] // 跳过分隔符
+			}
+		} else if remaining[0] == namespaceSeparator[0] {
+			// 场景2：无命名空间，直接以分隔符开头
+			remaining = remaining[1:]
 		}
-
-		// Normalize empty namespace to "/"
-		if namespace == "" {
-			namespace = "/"
-		}
+		// 场景3：无命名空间且无分隔符，直接使用默认值
 	}
 
-	// Handle ACK packets (type 3 or 6)
-	if packetType == SocketIOPacketAck || packetType == SocketIOPacketBinaryAck {
-		// Extract ACK ID (numeric prefix before payload)
+	// 处理 ACK 包（仅针对 ACK 类型的数据包）
+	ackTypes := map[string]bool{
+		SocketIOPacketAck:         true,
+		SocketIOPacketBinaryAck:   true,
+		SocketIOPacketAckV4:       true,
+		SocketIOPacketBinaryAckV4: true,
+	}
+	if ackTypes[packetType] {
 		ackEnd := 0
 		for ackEnd < len(remaining) && remaining[ackEnd] >= '0' && remaining[ackEnd] <= '9' {
 			ackID = ackID*10 + int(remaining[ackEnd]-'0')
@@ -147,29 +174,9 @@ func (p *EngineIOProtocol) ParseSocketIOPacket(data []byte) (packetType string, 
 		}
 		if ackEnd > 0 {
 			remaining = remaining[ackEnd:]
-			if len(remaining) > 0 && remaining[0] == ',' {
+			// 跳过 ACK ID 后的分隔符
+			if len(remaining) > 0 && remaining[0] == namespaceSeparator[0] {
 				remaining = remaining[1:]
-			}
-		}
-	}
-
-	// Handle EVENT/BINARY_EVENT packets (type 2 or 5)
-	if packetType == SocketIOPacketEvent || packetType == SocketIOPacketBinaryEvent {
-		// Check for JSON array format (e.g. ["event", data] or ["event", data, ackId])
-		if len(remaining) > 0 && remaining[0] == '[' {
-			end := len(remaining) - 1
-			if remaining[end] == ']' {
-				// Extract event data (may contain ACK ID)
-				lastComma := bytes.LastIndexByte(remaining, ',')
-				if lastComma != -1 {
-					// Check if last element is ACK ID (number)
-					ackStr := string(remaining[lastComma+1 : end])
-					if ackNum, err := strconv.Atoi(ackStr); err == nil {
-						ackID = ackNum
-						remaining = remaining[:lastComma]
-						remaining = append(remaining, ']')
-					}
-				}
 			}
 		}
 	}

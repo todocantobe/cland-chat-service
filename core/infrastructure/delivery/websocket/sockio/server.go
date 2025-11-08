@@ -185,6 +185,9 @@ func (s *WsServer) handle0(conn *websocket.Conn, r *http.Request, sid string) {
 		ConnectionManager: s.connManager,
 		MessageSender:     messageSender,
 	}
+	
+	// 创建协议处理器
+	protocolHandler := NewProtocolHandler(s.logger, s.protocol, wsHandler)
 
 	// 配置读超时：基于 Engine.IO 握手约定的 pingTimeout（5秒）+ 缓冲1秒
 	readTimeout := 6 * time.Second
@@ -260,56 +263,9 @@ func (s *WsServer) handle0(conn *websocket.Conn, r *http.Request, sid string) {
 				continue
 			}
 
-			// 处理不同类型的数据包
-			switch packetType {
-			case PacketTypePing:
-				// 响应 Ping（更新活动时间）
-				s.connManager.UpdateLastActive(clandCID)
-				_ = conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
-				if err := s.protocol.SendPacket(conn, PacketTypePong, "probe"); err != nil {
-					log.Error("Failed to send pong", zap.Error(err))
-				}
-				_ = conn.SetWriteDeadline(time.Time{})
-
-			case PacketTypePong:
-				// 收到 Pong（已通过 SetPongHandler 更新活动时间）
-				log.Debug("Received pong from client")
-
-			case PacketTypeMessage:
-				// 解析 Socket.IO 数据包
-				sioType, namespace, sioPayload, _, err := s.protocol.ParseSocketIOPacket(payload)
-				if err != nil {
-					log.Error("Failed to parse Socket.IO packet", zap.Error(err), zap.ByteString("payload", payload))
-					continue
-				}
-
-				switch sioType {
-				case SocketIOPacketConnect:
-					log.Info("Client connected to namespace", zap.String("namespace", namespace))
-					// 发送连接确认
-					ackPacket, err := s.protocol.BuildSocketIOPacket(SocketIOPacketConnect, namespace, map[string]string{"sid": sid})
-					if err != nil {
-						log.Error("Failed to build connect ack", zap.Error(err))
-						continue
-					}
-					_ = conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
-					if err := s.protocol.SendPacket(conn, PacketTypeMessage, ackPacket); err != nil {
-						log.Error("Failed to send connect ack", zap.Error(err))
-					}
-					_ = conn.SetWriteDeadline(time.Time{})
-
-				default:
-					// 解析事件数据并处理
-					_, eventData, err := s.protocol.ParseEventPayload(sioPayload)
-					if err != nil {
-						log.Error("Failed to parse event payload", zap.Error(err), zap.ByteString("sioPayload", sioPayload))
-						continue
-					}
-					wsHandler.HandleMessage(conn, string(eventData))
-				}
-
-			case PacketTypeClose:
-				log.Info("Received close packet from client")
+			// 使用协议处理器处理数据包
+			if err := protocolHandler.HandleEngineIOPacket(conn, packetType, payload, clandCID); err != nil {
+				log.Info("Connection terminated by protocol handler", zap.Error(err))
 				return
 			}
 		}

@@ -22,18 +22,55 @@ type Handler struct {
 	connections       sync.Map // map[string]*websocket.Conn
 }
 
-func (h *Handler) HandleMessage(conn *websocket.Conn, data string) {
-	// Parse message
-	var msg entity.Message
-	if err := json.Unmarshal([]byte(data), &msg); err != nil {
-		h.sendError(conn, "invalid message format")
-		return
-	}
+// HandleMessageWithAck handles messages that require ACK response
+func (h *Handler) HandleMessageWithAck(conn *websocket.Conn, eventName string, data string) (interface{}, error) {
+	switch eventName {
+	case "message":
+		// Parse message
+		var msg entity.Message
+		if err := json.Unmarshal([]byte(data), &msg); err != nil {
+			return nil, errors.New("invalid message format")
+		}
 
-	// Process message
-	if err := h.processMessage(conn, msg); err != nil {
-		h.sendError(conn, err.Error())
+		// Process message
+		if err := h.processMessage(conn, msg); err != nil {
+			return nil, err
+		}
+
+		return map[string]interface{}{
+			"status":  "success",
+			"message": "message processed",
+		}, nil
+
+	default:
+		return nil, errors.New("unsupported event type")
 	}
+}
+
+// HandleEvent handles events without ACK response
+func (h *Handler) HandleEvent(conn *websocket.Conn, namespace string, eventName string, data string) {
+	switch eventName {
+	case "message":
+		// Parse message
+		var msg entity.Message
+		if err := json.Unmarshal([]byte(data), &msg); err != nil {
+			h.sendError(conn, "invalid message format")
+			return
+		}
+
+		// Process message
+		if err := h.processMessage(conn, msg); err != nil {
+			h.sendError(conn, err.Error())
+		}
+
+	default:
+		h.sendError(conn, "unsupported event type")
+	}
+}
+
+// HandleMessage handles messages (legacy method, kept for compatibility)
+func (h *Handler) HandleMessage(conn *websocket.Conn, data string) {
+	h.HandleEvent(conn, "/", "message", data)
 }
 
 func (h *Handler) HandleError(conn *websocket.Conn, err error) {
