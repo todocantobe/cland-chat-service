@@ -2,7 +2,7 @@ module cland.org/cland-chat-service
 
 go 1.25.3
 
-replace github.com/chaineasy0303/go-share => D:/work/code/go/go-share
+replace github.com/chaineasy0303/cland-go-share => D:/work/code/go/go-share
 
 require (
 	github.com/gin-gonic/gin v1.9.1

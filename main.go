@@ -10,7 +10,7 @@ import (
 	"syscall"
 	"time"
 
-	"cland.org/cland-chat-service/core/infrastructure/delivery/websocket/sockio"
+	"cland.org/cland-chat-service/core/infrastructure/delivery/websocket"
 
 	"cland.org/cland-chat-service/core/application"
 	"go.uber.org/zap"
@@ -56,7 +56,7 @@ func main() {
 	httpRouter.Use(logger.GinLogger(zapLogger))
 
 	// Initialize WebSocket server
-	wsServer := sockio.InitWsServer(zapLogger, chatService)
+	wsServer := websocket.InitWsServer(zapLogger, chatService)
 
 	// Create HTTP server
 	httpServer := &http.Server{

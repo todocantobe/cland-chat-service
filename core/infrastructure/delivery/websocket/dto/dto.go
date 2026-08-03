@@ -8,10 +8,10 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// MessageSender defines the interface for sending messages
+// MessageSender 定义原生 WebSocket 消息发送接口
+// 发送的内容直接序列化为 JSON 文本帧发送给客户端
 type MessageSender interface {
-	SendEvent(conn *websocket.Conn, namespace string, eventName string, data interface{}) error
-	SendError(conn *websocket.Conn, namespace string, err error) error
+	Send(conn *websocket.Conn, v interface{}) error
 }
 
 // WSMessage WebSocket通用消息结构

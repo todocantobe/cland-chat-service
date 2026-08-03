@@ -10,7 +10,7 @@ import (
 	"go.uber.org/zap"
 )
 
-// Manager Socket.IO连接管理器
+// Manager WebSocket连接管理器
 type Manager struct {
 	connections map[string]*websocket.Conn // userID -> connection
 	lastActive  map[string]time.Time       // userID -> last active time
@@ -19,7 +19,7 @@ type Manager struct {
 	log         *zap.Logger
 }
 
-// NewManager 创建Socket.IO连接管理器
+// NewManager 创建WebSocket连接管理器
 func NewManager(log *zap.Logger) *Manager {
 	return &Manager{
 		connections: make(map[string]*websocket.Conn),
@@ -41,7 +41,7 @@ func (m *Manager) AddConnection(conn *websocket.Conn, userID string) {
 	m.lastActive[userID] = time.Now()
 	m.mu.Unlock()
 
-	m.log.Info("New Socket.IO connection", zap.String("userID", userID))
+	m.log.Info("New WebSocket connection", zap.String("userID", userID))
 }
 
 // RemoveConnection 移除连接
@@ -51,7 +51,16 @@ func (m *Manager) RemoveConnection(userID string) {
 	delete(m.lastActive, userID)
 	m.mu.Unlock()
 
-	m.log.Info("Socket.IO connection removed", zap.String("userID", userID))
+	m.log.Info("WebSocket connection removed", zap.String("userID", userID))
+}
+
+// GetConnection 获取指定用户的连接
+func (m *Manager) GetConnection(userID string) (*websocket.Conn, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	conn, ok := m.connections[userID]
+	return conn, ok
 }
 
 // UpdateLastActive 更新最后活跃时间
