@@ -24,11 +24,13 @@ type Handler struct {
 func (h *Handler) HandleMessage(conn *websocket.Conn, data string) {
 	var msg entity.Message
 	if err := json.Unmarshal([]byte(data), &msg); err != nil {
+		log.Println("ws invalid message:", err)
 		h.sendError(conn, "invalid message format")
 		return
 	}
 
 	if err := h.processMessage(conn, msg); err != nil {
+		log.Println("ws process message error:", err)
 		h.sendError(conn, err.Error())
 	}
 }
@@ -60,14 +62,19 @@ func (h *Handler) processMessage(conn *websocket.Conn, msg entity.Message) error
 	}
 }
 
-// pushMessage 推送消息给接收方
+// pushMessage 推送消息给接收方，并持久化送达状态
 func (h *Handler) pushMessage(msg entity.Message) error {
+	ctx := context.Background()
+	msg.Status = entity.StatusDelivered
+	wsMsg := dto.FromEntity(msg).ToWSMessage()
+
 	// 房间消息（前缀 room:）广播到房间
 	if len(msg.Dst) > 5 && msg.Dst[:5] == "room:" {
 		roomID := msg.Dst[5:]
-		msg.Status = entity.StatusDelivered
-		wsMsg := dto.FromEntity(msg).ToWSMessage()
-		return h.ConnectionManager.BroadcastToRoom(wsMsg, roomID)
+		if err := h.ConnectionManager.BroadcastToRoom(wsMsg, roomID); err != nil {
+			return err
+		}
+		return h.ChatService.ProcessMessageStatus(ctx, msg.MsgID, entity.StatusDelivered)
 	}
 
 	// 直发消息：解析接收方 ID（格式 "U:user_xxx" / "A:agent_xxx"）
@@ -76,14 +83,16 @@ func (h *Handler) pushMessage(msg entity.Message) error {
 		recipientID = msg.Dst[2:]
 	}
 
-	msg.Status = entity.StatusDelivered
-	wsMsg := dto.FromEntity(msg).ToWSMessage()
 	if conn, ok := h.ConnectionManager.GetConnection(recipientID); ok {
-		return h.MessageSender.Send(conn, wsMsg)
+		if err := h.MessageSender.Send(conn, wsMsg); err != nil {
+			return err
+		}
+		// 持久化已送达状态（供已读回执 Sent→Delivered→Read 流转）
+		return h.ChatService.ProcessMessageStatus(ctx, msg.MsgID, entity.StatusDelivered)
 	}
 
 	// 接收方离线，更新为离线状态
-	return h.ChatService.ProcessMessageStatus(context.Background(), msg.MsgID, entity.StatusOffline)
+	return h.ChatService.ProcessMessageStatus(ctx, msg.MsgID, entity.StatusOffline)
 }
 
 // sendError 发送错误消息（统一错误消息体）

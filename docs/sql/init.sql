@@ -41,7 +41,7 @@ CREATE TABLE t_chat_message (
     dst VARCHAR(50) NOT NULL,
     content TEXT NOT NULL,
     content_type INTEGER NOT NULL,
-    ts DATETIME NOT NULL,
+    ts BIGINT NOT NULL DEFAULT 0,
     status INTEGER NOT NULL DEFAULT 1,
     ext TEXT,
     is_deleted INTEGER DEFAULT 0,

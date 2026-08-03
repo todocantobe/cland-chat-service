@@ -1,0 +1,34 @@
+### 前置条件
+# 1. 启动服务: make run（或 IDE 调试），HTTP :8080 / WS :8081
+# 2. 数据库已初始化（docs/sql/init.sql）
+# 3. 本文件用 JetBrains HTTP Client / VS Code REST Client / httpyac 运行
+#    WS 用户通信测试请使用: python3 e2e/ws_user_chat.py
+
+### 健康检查
+GET http://{{host}}/api/health
+
+### 初始化用户
+# 期望: 创建/初始化用户 user_001
+POST http://{{host}}/api/init
+Content-Type: application/json
+
+{
+  "userId": "user_001"
+}
+
+### 发送聊天消息（HTTP 通道）
+POST http://{{host}}/api/chat
+Content-Type: application/json
+
+{
+  "sessionId": "e2e-session",
+  "msgId": "http-msg-001",
+  "msgType": 1,
+  "src": "U:user_001",
+  "dst": "U:user_002",
+  "content": "Hello via HTTP",
+  "contentType": 1
+}
+
+### 查询会话消息
+GET http://{{host}}/api/messages?userId=user_001
