@@ -37,11 +37,10 @@ func main() {
 		zapLogger.Fatal("Invalid server port configuration")
 	}
 
-	// Initialize repositories
-	_, messageRepo, sessionRepo, userRepo, err := repository.NewSQLiteRepository("E:/data/cland_chat.db")
-	if err != nil {
-		zapLogger.Fatal("Failed to initialize SQLite repository", zap.Error(err))
-	}
+	// Initialize repositories（极简 WS 网关：内存仓储，无持久化）
+	messageRepo := repository.NewMemoryMessageRepository()
+	sessionRepo := repository.NewMemorySessionRepository()
+	userRepo := repository.NewMemoryUserRepository()
 
 	// Initialize use cases
 	chatUseCase := usecase.NewChatUseCase(
