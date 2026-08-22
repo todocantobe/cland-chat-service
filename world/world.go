@@ -48,6 +48,20 @@ type stateFrame struct {
 	Agents []Agent `json:"agents"`
 }
 
+type eventFrame struct {
+	Kind     string `json:"kind"`
+	Text     string `json:"text"`
+	Severity int    `json:"severity"`
+}
+
+type chatFrame struct {
+	Kind string `json:"kind"`
+	ID   string `json:"id"`
+	From string `json:"from"`
+	Role string `json:"role"`
+	Text string `json:"text"`
+}
+
 type interventionFrame struct {
 	Kind   string `json:"kind"`
 	Action string `json:"action"`
@@ -65,6 +79,24 @@ var namePools = map[string][]string{
 	"coordination":  {"Link", "Mesh", "Route", "Relay", "Harmony", "Bridge"},
 }
 
+// 角色间对话语料（与前端 AgentSpeech chatTo 同源语义：流水线相邻角色）
+var chatLines = map[string]map[string][]string{
+	"perception": {
+		"reasoning": {"新任务来了，交给你拆解。", "数据包已解析，转推理层处理。", "收到了一个复杂请求，你分析一下。"},
+	},
+	"reasoning": {
+		"execution": {"方案已制定，执行层请接手。", "任务拆解完成，这是执行步骤。", "按这个计划执行，有问题反馈。"},
+	},
+	"execution": {
+		"verification": {"任务执行完毕，请校验。", "完成了，检查一下结果。", "这是我的输出，审核吧。"},
+	},
+	"verification": {
+		"perception": {"校验完成，可接收新任务。", "结果已确认，反馈给感知层。", "闭环完成，一切正常。"},
+	},
+}
+
+var pipelineOrder = []string{"perception", "reasoning", "execution", "verification"}
+
 // ─── WorldServer ──────────────────────────────────────────────────────
 
 type WorldServer struct {
@@ -80,6 +112,7 @@ type WorldServer struct {
 	mu       sync.RWMutex
 	stop     chan struct{}
 	speedEnd time.Time // SK-SPEED 截止
+	chatAt   time.Time // 上次对话时刻
 }
 
 func New(wsURL, cid, room string) *WorldServer {
@@ -159,6 +192,11 @@ func (w *WorldServer) connectAndServe() error {
 			if int(w.elapsed*1000)%1000 < 500 {
 				w.broadcastState()
 			}
+			// 权威世界的社交：每 ~8s 一对流水线相邻角色对话
+			if time.Since(w.chatAt) > 8*time.Second {
+				w.chatAt = time.Now()
+				w.broadcastChat()
+			}
 		}
 	}
 }
@@ -209,6 +247,7 @@ func (w *WorldServer) simulate() {
 			if time.Since(a.errorSince) > 3*time.Second {
 				a.State = "idle"
 				a.Load = max(0, a.Load-20)
+				w.broadcastEvent(fmt.Sprintf("✅ %s 已恢复运行", a.Name), 0)
 			}
 		case "running":
 			// 处理任务：进度推进 → 完成
@@ -225,6 +264,7 @@ func (w *WorldServer) simulate() {
 				if a.Load < 30 {
 					a.State = "idle"
 				}
+				w.broadcastEvent(fmt.Sprintf("✅ %s 完成任务 #%d", a.Name, a.TasksCompleted), 0)
 			} else if a.Load > 85 {
 				a.State = "pending"
 			}
@@ -233,6 +273,7 @@ func (w *WorldServer) simulate() {
 				a.State = "error"
 				a.ErrorCount++
 				a.errorSince = time.Now()
+				w.broadcastEvent(fmt.Sprintf("⚠ %s [%s] → 报错", a.Name, a.Role), 2)
 			}
 		case "idle":
 			// 任务到达 → running
@@ -289,6 +330,7 @@ func (w *WorldServer) handleIntervention(iv interventionFrame) {
 				a.State = "idle"
 				a.Load = max(0, a.Load-30)
 				log.Printf("[world] intervention: recover %s", a.Name)
+				w.broadcastEvent(fmt.Sprintf("💊 故障恢复: %s 已恢复", a.Name), 0)
 				break
 			}
 		}
@@ -351,6 +393,72 @@ func (w *WorldServer) broadcastState() {
 	copy(frame[2+len(roomB):], payload)
 	if err := w.write(frame); err != nil {
 		log.Printf("[world] broadcast: %v", err)
+	}
+}
+
+// broadcastChat 权威世界的 Agent 对话：广播到目标角色房间（跨实例可见）
+func (w *WorldServer) broadcastChat() {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	if len(w.agents) < 2 {
+		return
+	}
+	fromRole := pipelineOrder[rand.Intn(len(pipelineOrder))]
+	toRole := pipelineOrder[(indexOf(pipelineOrder, fromRole)+1)%len(pipelineOrder)]
+	lines := chatLines[fromRole][toRole]
+	if len(lines) == 0 {
+		return
+	}
+	var from *Agent
+	for _, a := range w.agents {
+		if a.Role == fromRole && a.State != "down" {
+			from = a
+			break
+		}
+	}
+	if from == nil {
+		return
+	}
+	payload, err := json.Marshal(chatFrame{
+		Kind: "chat", ID: from.ID, From: from.Name, Role: fromRole,
+		Text: lines[rand.Intn(len(lines))],
+	})
+	if err != nil {
+		return
+	}
+	roomB := []byte("room:" + toRole)
+	frame := make([]byte, 2+len(roomB)+len(payload))
+	frame[0] = 0x02
+	frame[1] = byte(len(roomB))
+	copy(frame[2:], roomB)
+	copy(frame[2+len(roomB):], payload)
+	if err := w.write(frame); err != nil {
+		log.Printf("[world] chat: %v", err)
+	}
+}
+
+func indexOf(list []string, v string) int {
+	for i, x := range list {
+		if x == v {
+			return i
+		}
+	}
+	return 0
+}
+
+func (w *WorldServer) broadcastEvent(text string, severity int) {
+	payload, err := json.Marshal(eventFrame{Kind: "event", Text: text, Severity: severity})
+	if err != nil {
+		return
+	}
+	roomB := []byte(w.room)
+	frame := make([]byte, 2+len(roomB)+len(payload))
+	frame[0] = 0x02
+	frame[1] = byte(len(roomB))
+	copy(frame[2:], roomB)
+	copy(frame[2+len(roomB):], payload)
+	if err := w.write(frame); err != nil {
+		log.Printf("[world] event: %v", err)
 	}
 }
 
