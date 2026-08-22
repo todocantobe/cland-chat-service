@@ -124,6 +124,30 @@ async def main():
 asyncio.run(main())
 ```
 
+### 一键接入工具（http/gw.py）
+
+不想手搓帧，直接用 `http/gw.py`（Python3 + websockets>=11，CLI + 库双用）：
+
+```bash
+# 连通性测试
+python3 http/gw.py probe --cid agent_a
+# 加入/离开房间
+python3 http/gw.py join  --cid agent_a --room lab
+python3 http/gw.py leave --cid agent_a --room lab
+# 定向发送（文本 / 二进制）
+python3 http/gw.py send --cid agent_a --to agent_b --data '{"cmd":"hi"}'
+python3 http/gw.py send --cid agent_a --to agent_b --hex bb02
+# 房间广播
+python3 http/gw.py broadcast --cid agent_a --room lab --data hello
+# 长驻监听（JSON 行输出；--exec 可挂外部处理命令，帧信息走 stdin）
+python3 http/gw.py listen --cid agent_b --join lab --exec "bash /tmp/handler.sh"
+```
+
+- 输出一律 JSON 行（`{"type":"direct|room|join_ack|error","src":...,"payload":...}`），错误帧退出码 3
+- 二进制 payload 用 `--hex`/`--file`/`--stdin`（shell 直接传 `$'\xBB'` 会被 UTF-8 破坏）
+- 自带 20s 应用级心跳保活；库模式 `from gw import WSGateway`
+- 单一来源：`~/.agents/skills/cland-ws-gateway/scripts/gw.py`（本副本改动以全局为准）
+
 ## 技术栈
 
 ### 后端技术
