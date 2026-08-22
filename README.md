@@ -66,6 +66,37 @@ Infrastructure → Domain
 - 客服分配
 - REST API接口
 
+## WebSocket 网关（Socket.IO v4 协议）
+
+极简 WS 网关监听 **8081**（`/socket.io/`），实现标准 **Engine.IO v4 + Socket.IO v4** 协议，兼容 `socket.io-client` / `python-socketio`。
+
+### 客户端连接要求
+
+- **仅支持 websocket transport**（polling 未实现）：客户端必须显式限定 `transports: ['websocket']`（socket.io-client）或 `transports='websocket'`（python-socketio）；请求 polling 会收到 400 错误。
+- **认证参数**：连接 URL 必须携带 `cland-cid` 查询参数作为用户标识，缺失时返回 HTTP 401。
+
+```js
+// socket.io-client
+const io = require("socket.io-client");
+const sock = io("http://127.0.0.1:8081", {
+  path: "/socket.io",
+  transports: ["websocket"],
+  query: { "cland-cid": "user_001" },
+});
+```
+
+### 事件协议
+
+| 方向 | 事件 | 数据 | 说明 |
+|------|------|------|------|
+| 客户端→服务端 | `message` | `entity.Message` JSON | 发送聊天消息（`dst` 支持 `U:user_xxx` 定向 / `room:xxx` 房间广播） |
+| 客户端→服务端 | `join` | 房间 ID 字符串 | 加入房间（广播投递目标） |
+| 客户端→服务端 | `leave` | 房间 ID 字符串 | 离开房间 |
+| 服务端→客户端 | `message` | `{code,msg,data:entity.Message}` | 消息投递（定向/房间广播） |
+| 服务端→客户端 | `error` | `{message}` | 业务错误 |
+
+心跳为 Engine.IO v4 标准：服务端每 25s 发 `2` ping，客户端回 `3` pong。
+
 ## 技术栈
 
 ### 后端技术

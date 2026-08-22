@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -68,36 +67,37 @@ func (p *EngineIOProtocol) SendHandshake(w http.ResponseWriter, sid string) erro
 
 	// Engine.IO packet format:
 	// 0{"sid":"...","upgrades":[...],...}
-	response := new(bytes.Buffer)
-	response.WriteByte('0') // Packet type '0' (open)
-
-	encoder := json.NewEncoder(response)
-	if err := encoder.Encode(data); err != nil {
+	// 注意：必须用 json.Marshal 而非 json.Encoder（后者会附加换行符，违反 Engine.IO 载荷规范）
+	jsonData, err := json.Marshal(data)
+	if err != nil {
 		return fmt.Errorf("failed to encode handshake data: %w", err)
 	}
 
-	// json.Encoder adds a newline, but Engine.IO spec doesn't require it
-	// We'll keep it for compatibility with most clients
-
-	// Write the complete response
-	_, err := w.Write(response.Bytes())
+	response := append([]byte{'0'}, jsonData...) // Packet type '0' (open)
+	_, err = w.Write(response)
 	return err
 }
 
-// BuildSocketIOPacket constructs a Socket.IO protocol message
+// BuildSocketIOPacket constructs a Socket.IO v4 protocol message.
+// v4 规范：<type>[<namespace>,]<data>，命名空间仅在非默认("/")时出现。
+// 默认命名空间的事件包形如 2["event",data]，连接确认形如 0{"sid":"..."}。
 func (p *EngineIOProtocol) BuildSocketIOPacket(packetType string, namespace string, data interface{}) (string, error) {
 	var builder strings.Builder
 	builder.WriteString(packetType) // Socket.IO packet type
 
+	// v4：仅当命名空间非默认时才写 <namespace>, 前缀
 	if namespace != "" && namespace != "/" {
 		builder.WriteString(namespace)
+		builder.WriteString(",")
 	}
-	builder.WriteString(",")
+
 	switch v := data.(type) {
 	case string:
 		builder.WriteString(v)
 	case []byte:
 		builder.Write(v)
+	case nil:
+		// 无载荷（如纯 connect 确认 "40"、disconnect "41"）
 	default:
 		jsonData, err := json.Marshal(data)
 		if err != nil {
@@ -109,69 +109,55 @@ func (p *EngineIOProtocol) BuildSocketIOPacket(packetType string, namespace stri
 	return builder.String(), nil
 }
 
-// ParseSocketIOPacket parses a Socket.IO protocol message according to the v4 protocol
+// ParseSocketIOPacket parses a Socket.IO v4 protocol message.
+// v4 规范：<type>[<namespace>,][<ackId>]<payload>，命名空间仅在剩余部分以 '/' 开头时出现。
+// 例如：
+//
+//	"0"                     -> CONNECT, ns=/, 无载荷（len==1 合法）
+//	"0{\"token\":\"t\"}"       -> CONNECT, ns=/, 带认证载荷
+//	"0/admin"               -> CONNECT, ns=/admin
+//	"0/admin,{\"token\":\"t\"}" -> CONNECT, ns=/admin, 带载荷
+//	"1"                     -> DISCONNECT
+//	"2[\"message\",{...}]"  -> EVENT, ns=/
+//	"2/admin,[\"message\",...]" -> EVENT, ns=/admin
+//	"3<ackId>[,payload]"    -> ACK
 func (p *EngineIOProtocol) ParseSocketIOPacket(data []byte) (packetType string, namespace string, payload []byte, ackID int, err error) {
-	if len(data) < 2 {
+	if len(data) == 0 {
 		return "", "", nil, 0, fmt.Errorf("invalid Socket.IO packet length")
 	}
 
 	packetType = string(data[0])
 	remaining := data[1:]
 
-	// Parse namespace (optional)
+	// 命名空间：仅当以 '/' 开头时存在（v4 规范，不再用逗号探测——
+	// 旧实现把事件 JSON 数组内的逗号误判为命名空间分隔符）
 	namespace = "/"
-	if len(remaining) > 0 {
+	if len(remaining) > 0 && remaining[0] == '/' {
 		nsEnd := bytes.IndexByte(remaining, ',')
 		if nsEnd == -1 {
-			// No comma found, entire remaining is namespace
 			namespace = string(remaining)
 			remaining = nil
 		} else {
 			namespace = string(remaining[:nsEnd])
 			remaining = remaining[nsEnd+1:]
 		}
-
-		// Normalize empty namespace to "/"
-		if namespace == "" {
-			namespace = "/"
-		}
 	}
 
-	// Handle ACK packets (type 3 or 6)
-	if packetType == SocketIOPacketAck || packetType == SocketIOPacketBinaryAck {
-		// Extract ACK ID (numeric prefix before payload)
-		ackEnd := 0
-		for ackEnd < len(remaining) && remaining[ackEnd] >= '0' && remaining[ackEnd] <= '9' {
-			ackID = ackID*10 + int(remaining[ackEnd]-'0')
-			ackEnd++
-		}
-		if ackEnd > 0 {
-			remaining = remaining[ackEnd:]
-			if len(remaining) > 0 && remaining[0] == ',' {
-				remaining = remaining[1:]
-			}
-		}
+	// 可选的 ACK ID（数字前缀）
+	ackEnd := 0
+	for ackEnd < len(remaining) && remaining[ackEnd] >= '0' && remaining[ackEnd] <= '9' {
+		ackID = ackID*10 + int(remaining[ackEnd]-'0')
+		ackEnd++
+	}
+	if ackEnd > 0 {
+		remaining = remaining[ackEnd:]
 	}
 
-	// Handle EVENT/BINARY_EVENT packets (type 2 or 5)
-	if packetType == SocketIOPacketEvent || packetType == SocketIOPacketBinaryEvent {
-		// Check for JSON array format (e.g. ["event", data] or ["event", data, ackId])
-		if len(remaining) > 0 && remaining[0] == '[' {
-			end := len(remaining) - 1
-			if remaining[end] == ']' {
-				// Extract event data (may contain ACK ID)
-				lastComma := bytes.LastIndexByte(remaining, ',')
-				if lastComma != -1 {
-					// Check if last element is ACK ID (number)
-					ackStr := string(remaining[lastComma+1 : end])
-					if ackNum, err := strconv.Atoi(ackStr); err == nil {
-						ackID = ackNum
-						remaining = remaining[:lastComma]
-						remaining = append(remaining, ']')
-					}
-				}
-			}
-		}
+	// 兼容垫片：剥离类型/ACK ID 后的单个前导逗号。
+	// 标准 v4 包不会出现（命名空间已在上方消费），但旧自定义格式
+	// （"2,[\"message\",...]"）与 ACK 带数据（"3<id>,<data>"）会带逗号。
+	if len(remaining) > 0 && remaining[0] == ',' {
+		remaining = remaining[1:]
 	}
 
 	payload = remaining
@@ -186,6 +172,8 @@ func (p *EngineIOProtocol) SendPacket(conn *websocket.Conn, packetType string, d
 		msg = packetType + v
 	case []byte:
 		msg = packetType + string(v)
+	case nil:
+		msg = packetType // 无载荷（如 ping "2"、pong "3"）
 	default:
 		jsonData, err := json.Marshal(data)
 		if err != nil {
@@ -216,6 +204,7 @@ func (p *EngineIOProtocol) ParsePacket(data []byte) (packetType string, payload 
 }
 
 // ParseEventPayload parses a Socket.IO event payload in the format ["eventName", eventData]
+// 事件数据可缺省（如 ["join"]），此时 eventData 返回 nil。
 func (p *EngineIOProtocol) ParseEventPayload(payload []byte) (eventName string, eventData []byte, err error) {
 	if len(payload) == 0 {
 		return "", nil, fmt.Errorf("empty payload")
@@ -227,8 +216,8 @@ func (p *EngineIOProtocol) ParseEventPayload(payload []byte) (eventName string, 
 		return "", nil, fmt.Errorf("invalid event payload format: %w", err)
 	}
 
-	if len(arr) < 2 {
-		return "", nil, fmt.Errorf("event payload must contain at least 2 elements")
+	if len(arr) < 1 {
+		return "", nil, fmt.Errorf("event payload must contain at least 1 element")
 	}
 
 	// Extract event name
@@ -236,8 +225,10 @@ func (p *EngineIOProtocol) ParseEventPayload(payload []byte) (eventName string, 
 		return "", nil, fmt.Errorf("failed to parse event name: %w", err)
 	}
 
-	// Return event data as raw JSON
-	eventData = arr[1]
+	// Return event data as raw JSON (may be absent)
+	if len(arr) > 1 {
+		eventData = arr[1]
+	}
 	return eventName, eventData, nil
 }
 
