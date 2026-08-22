@@ -10,7 +10,7 @@ import (
 	"syscall"
 	"time"
 
-	"cland.org/cland-chat-service/core/infrastructure/delivery/websocket/sockio"
+	"cland.org/cland-chat-service/core/infrastructure/delivery/websocket/gateway"
 
 	"cland.org/cland-chat-service/core/usecase"
 	"go.uber.org/zap"
@@ -54,8 +54,8 @@ func main() {
 	httpRouter.Use(logger.GinRecovery(zapLogger, true))
 	httpRouter.Use(logger.GinLogger(zapLogger))
 
-	// Initialize WebSocket server
-	go sockio.InitWsServer(zapLogger, chatUseCase)
+	// Initialize WebSocket gateway（原生二进制帧转发，逻辑层自定义）
+	go gateway.InitWsGateway(zapLogger)
 
 	// Create HTTP server
 	httpServer := &http.Server{

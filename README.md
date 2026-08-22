@@ -66,36 +66,63 @@ Infrastructure → Domain
 - 客服分配
 - REST API接口
 
-## WebSocket 网关（Socket.IO v4 协议）
+## WebSocket 帧转发网关（原生协议）
 
-极简 WS 网关监听 **8081**（`/socket.io/`），实现标准 **Engine.IO v4 + Socket.IO v4** 协议，兼容 `socket.io-client` / `python-socketio`。
+极简 WS 网关监听 **8081**（`/ws`），原生 WebSocket 二进制帧转发：**网关只解析 1 字节类型 + 路由目标，payload 原样转发（零 JSON、零业务解析）**，业务逻辑层协议完全自定义。适用于游戏帧转发等高频场景。
 
-### 客户端连接要求
+### 连接
 
-- **仅支持 websocket transport**（polling 未实现）：客户端必须显式限定 `transports: ['websocket']`（socket.io-client）或 `transports='websocket'`（python-socketio）；请求 polling 会收到 400 错误。
-- **认证参数**：连接 URL 必须携带 `cland-cid` 查询参数作为用户标识，缺失时返回 HTTP 401。
-
-```js
-// socket.io-client
-const io = require("socket.io-client");
-const sock = io("http://127.0.0.1:8081", {
-  path: "/socket.io",
-  transports: ["websocket"],
-  query: { "cland-cid": "user_001" },
-});
+```
+ws://host:8081/ws?cid=user_001
 ```
 
-### 事件协议
+- `cid` 必填（用户标识），缺失返回 HTTP 401
+- 心跳为 WebSocket 协议级控制帧 ping/pong（服务端每 25s 发 ping，零业务字节开销）；客户端 45s 无帧即判定离线
 
-| 方向 | 事件 | 数据 | 说明 |
-|------|------|------|------|
-| 客户端→服务端 | `message` | `entity.Message` JSON | 发送聊天消息（`dst` 支持 `U:user_xxx` 定向 / `room:xxx` 房间广播） |
-| 客户端→服务端 | `join` | 房间 ID 字符串 | 加入房间（广播投递目标） |
-| 客户端→服务端 | `leave` | 房间 ID 字符串 | 离开房间 |
-| 服务端→客户端 | `message` | `{code,msg,data:entity.Message}` | 消息投递（定向/房间广播） |
-| 服务端→客户端 | `error` | `{message}` | 业务错误 |
+### 帧格式（二进制，小端）
 
-心跳为 Engine.IO v4 标准：服务端每 25s 发 `2` ping，客户端回 `3` pong。
+**客户端 → 网关**：
+
+| 类型 | 含义 | 格式 |
+|------|------|------|
+| `0x01` | 定向转发 | `[01][dstLen u8][dst][payload]` |
+| `0x02` | 房间广播 | `[02][roomLen u8][room][payload]`（投递房间内除发送者外所有成员） |
+| `0x03` | 加入房间 | `[03][roomLen u8][room]` |
+| `0x04` | 离开房间 | `[04][roomLen u8][room]` |
+| `0x05` | 应用 PING | `[05]` |
+
+**网关 → 客户端**：
+
+| 类型 | 含义 | 格式 |
+|------|------|------|
+| `0x01` | 定向投递 | `[01][srcLen u8][src][payload]` |
+| `0x02` | 房间投递 | `[02][srcLen u8][src][payload]` |
+| `0x03` | join 确认 | `[03][roomLen u8][room]` |
+| `0x04` | leave 确认 | `[04][roomLen u8][room]` |
+| `0x05` | PONG | `[05]` |
+| `0xFF` | 错误 | `[FF][code u8][msgLen u8][msg]` |
+
+错误码：`0x01` 帧头非法 · `0x02` 定向目标离线 · `0x03` 未知帧类型 · `0x04` 参数错误
+
+> 路由目标（dst/room）为 UTF-8 字符串，长度 u8（≤255）；payload 为原始字节，长度不限（单帧 ≤ 受 WebSocket 帧限制）。
+
+### 客户端示例（Python）
+
+```python
+import asyncio, websockets
+
+async def main():
+    ws = await websockets.connect("ws://127.0.0.1:8081/ws?cid=user_001")
+    # 加入房间 + 广播一帧
+    await ws.send(bytes([0x03, 5]) + b"roomA")                 # JOIN roomA
+    await ws.send(bytes([0x02, 5]) + b"roomA" + b"\x01\x02\x03")  # ROOM 广播 payload
+    # 定向发送
+    await ws.send(bytes([0x01, 8]) + b"user_002" + b"hello")
+    async for frame in ws:
+        print(frame.hex())  # 0x01/0x02 投递帧 | 0x03/0x04 确认 | 0x05 pong | 0xFF 错误
+
+asyncio.run(main())
+```
 
 ## 技术栈
 
