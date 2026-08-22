@@ -134,4 +134,5 @@ python3 /tmp/e2e_gateway.py
 
 - 协议实现：`core/infrastructure/delivery/websocket/gateway/`
 - 连接注册表：`core/infrastructure/delivery/websocket/connection/`
+- **接入踩坑记录**：`docs/websocket/PITFALLS.md`（请求-应答同连接 / cid 顶替 / 广播不含发送者 等 7 条，客户端接入前必读）
 - kanban：BAS-ISSUE-002（Closed，需求变更）、[FEATURE] cland-chat-service 原生 WS 帧转发网关（Done）
